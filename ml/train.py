@@ -273,6 +273,10 @@ def main():
             "injection_diagnostic": injection_test(clean, test_start, model, cols, threshold),
         },
         "failure_analysis": failures,
+        "selected_model_feature_importances": (
+            {f: round(float(v), 4) for f, v in zip(cols, model.feature_importances_)}
+            if hasattr(model, "feature_importances_") else None),
+        "candidate_features": list(CANDIDATES),
         "feature_selection": selection,
         "tree_model_investigation": investigation,
         "hyperparameter_grids": {k: v["grid"] for k, v in validation_comparison.items() if "grid" in v},
@@ -284,22 +288,29 @@ def main():
 
 
 def failure_analysis(test, results, cols):
-    """Largest absolute test errors, described only by what the model could observe."""
+    """Largest test errors in BOTH directions (5 under-predictions + 5 over-predictions),
+    described only by what the model could observe. Also written to failure_analysis.csv."""
     err = results.actual_wh - results.predicted_wh
-    worst = err.abs().nlargest(N_FAILURES).index
+    half = N_FAILURES // 2
+    picks = [(ts, "under-predicted (used more than expected)") for ts in err.nlargest(half).index]
+    picks += [(ts, "over-predicted (used less than expected)") for ts in err.nsmallest(half).index]
     shown = [c for c in ["previous_interval", "previous_hour", "rolling_1h_mean", "rolling_6h_mean",
                          "previous_day_same_time", "lights_previous_interval"] if c in cols]
     days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     rows = []
-    for ts in worst:
+    for ts, direction in picks:
         r = results.loc[ts]
+        e = float(r.actual_wh - r.predicted_wh)
         rows.append({"timestamp": str(ts), "day": days[ts.day_of_week],
                      **{c: round(float(test.loc[ts, c]), 1) for c in shown},
                      "predicted_wh": float(r.predicted_wh), "actual_wh": float(r.actual_wh),
-                     "error_wh": round(float(r.actual_wh - r.predicted_wh), 1)})
-    over = sum(r["error_wh"] > 0 for r in rows)
+                     "error_wh": round(e, 1), "absolute_error_wh": round(abs(e), 1),
+                     "direction": direction, "flagged_as_anomaly": bool(r.is_anomaly)})
+    pd.DataFrame(rows).to_csv(RESULTS / "failure_analysis.csv", index=False)
     notes = [
-        f"{over} of the {len(rows)} largest errors are intervals where actual use was HIGHER than predicted.",
+        f"Shown: the {half} largest under-predictions and the {half} largest over-predictions on the final test period.",
+        f"The largest under-prediction is {rows[0]['absolute_error_wh']} Wh; the largest over-prediction is "
+        f"{rows[half]['absolute_error_wh']} Wh.",
         "The model sees only these inputs, all from BEFORE the predicted interval: " + ", ".join(cols) + ".",
         "It cannot see: which appliance was switched on, how many people were home, cooking/laundry/visitor "
         "schedules, or meter errors.",

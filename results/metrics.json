@@ -145,7 +145,10 @@
         "rolling_6h_mean": 93.6,
         "predicted_wh": 264.98,
         "actual_wh": 790.0,
-        "error_wh": 525.0
+        "error_wh": 525.0,
+        "absolute_error_wh": 525.0,
+        "direction": "under-predicted (used more than expected)",
+        "flagged_as_anomaly": true
       },
       {
         "timestamp": "2016-05-27 09:40:00",
@@ -155,7 +158,10 @@
         "rolling_6h_mean": 80.8,
         "predicted_wh": 60.33,
         "actual_wh": 580.0,
-        "error_wh": 519.7
+        "error_wh": 519.7,
+        "absolute_error_wh": 519.7,
+        "direction": "under-predicted (used more than expected)",
+        "flagged_as_anomaly": true
       },
       {
         "timestamp": "2016-05-16 17:40:00",
@@ -165,7 +171,10 @@
         "rolling_6h_mean": 145.0,
         "predicted_wh": 118.31,
         "actual_wh": 630.0,
-        "error_wh": 511.7
+        "error_wh": 511.7,
+        "absolute_error_wh": 511.7,
+        "direction": "under-predicted (used more than expected)",
+        "flagged_as_anomaly": true
       },
       {
         "timestamp": "2016-05-26 11:40:00",
@@ -175,7 +184,10 @@
         "rolling_6h_mean": 156.4,
         "predicted_wh": 104.22,
         "actual_wh": 600.0,
-        "error_wh": 495.8
+        "error_wh": 495.8,
+        "absolute_error_wh": 495.8,
+        "direction": "under-predicted (used more than expected)",
+        "flagged_as_anomaly": true
       },
       {
         "timestamp": "2016-05-26 09:50:00",
@@ -185,67 +197,107 @@
         "rolling_6h_mean": 95.8,
         "predicted_wh": 329.89,
         "actual_wh": 820.0,
-        "error_wh": 490.1
+        "error_wh": 490.1,
+        "absolute_error_wh": 490.1,
+        "direction": "under-predicted (used more than expected)",
+        "flagged_as_anomaly": true
       },
       {
-        "timestamp": "2016-05-07 18:10:00",
+        "timestamp": "2016-05-26 10:00:00",
+        "day": "Thu",
+        "previous_interval": 820.0,
+        "rolling_1h_mean": 276.7,
+        "rolling_6h_mean": 116.9,
+        "predicted_wh": 643.97,
+        "actual_wh": 350.0,
+        "error_wh": -294.0,
+        "absolute_error_wh": 294.0,
+        "direction": "over-predicted (used less than expected)",
+        "flagged_as_anomaly": false
+      },
+      {
+        "timestamp": "2016-05-21 11:00:00",
         "day": "Sat",
-        "previous_interval": 80.0,
-        "rolling_1h_mean": 81.7,
-        "rolling_6h_mean": 87.8,
-        "predicted_wh": 87.06,
-        "actual_wh": 560.0,
-        "error_wh": 472.9
+        "previous_interval": 470.0,
+        "rolling_1h_mean": 383.3,
+        "rolling_6h_mean": 178.3,
+        "predicted_wh": 384.65,
+        "actual_wh": 110.0,
+        "error_wh": -274.6,
+        "absolute_error_wh": 274.6,
+        "direction": "over-predicted (used less than expected)",
+        "flagged_as_anomaly": false
       },
       {
-        "timestamp": "2016-05-21 11:10:00",
+        "timestamp": "2016-05-18 16:50:00",
+        "day": "Wed",
+        "previous_interval": 240.0,
+        "rolling_1h_mean": 106.7,
+        "rolling_6h_mean": 81.4,
+        "predicted_wh": 333.12,
+        "actual_wh": 60.0,
+        "error_wh": -273.1,
+        "absolute_error_wh": 273.1,
+        "direction": "over-predicted (used less than expected)",
+        "flagged_as_anomaly": false
+      },
+      {
+        "timestamp": "2016-05-19 18:00:00",
+        "day": "Thu",
+        "previous_interval": 520.0,
+        "rolling_1h_mean": 208.3,
+        "rolling_6h_mean": 91.4,
+        "predicted_wh": 396.22,
+        "actual_wh": 160.0,
+        "error_wh": -236.2,
+        "absolute_error_wh": 236.2,
+        "direction": "over-predicted (used less than expected)",
+        "flagged_as_anomaly": false
+      },
+      {
+        "timestamp": "2016-05-21 11:40:00",
         "day": "Sat",
-        "previous_interval": 110.0,
-        "rolling_1h_mean": 356.7,
-        "rolling_6h_mean": 179.4,
-        "predicted_wh": 122.86,
-        "actual_wh": 590.0,
-        "error_wh": 467.1
-      },
-      {
-        "timestamp": "2016-05-13 07:50:00",
-        "day": "Fri",
-        "previous_interval": 80.0,
-        "rolling_1h_mean": 98.3,
-        "rolling_6h_mean": 77.2,
-        "predicted_wh": 94.11,
-        "actual_wh": 560.0,
-        "error_wh": 465.9
-      },
-      {
-        "timestamp": "2016-05-13 11:10:00",
-        "day": "Fri",
-        "previous_interval": 110.0,
-        "rolling_1h_mean": 80.0,
-        "rolling_6h_mean": 149.4,
-        "predicted_wh": 136.25,
-        "actual_wh": 600.0,
-        "error_wh": 463.8
-      },
-      {
-        "timestamp": "2016-05-21 13:10:00",
-        "day": "Sat",
-        "previous_interval": 80.0,
-        "rolling_1h_mean": 196.7,
-        "rolling_6h_mean": 269.7,
-        "predicted_wh": 104.02,
-        "actual_wh": 550.0,
-        "error_wh": 446.0
+        "previous_interval": 600.0,
+        "rolling_1h_mean": 516.7,
+        "rolling_6h_mean": 228.6,
+        "predicted_wh": 492.16,
+        "actual_wh": 260.0,
+        "error_wh": -232.2,
+        "absolute_error_wh": 232.2,
+        "direction": "over-predicted (used less than expected)",
+        "flagged_as_anomaly": false
       }
     ],
     "notes": [
-      "10 of the 10 largest errors are intervals where actual use was HIGHER than predicted.",
+      "Shown: the 5 largest under-predictions and the 5 largest over-predictions on the final test period.",
+      "The largest under-prediction is 525.0 Wh; the largest over-prediction is 294.0 Wh.",
       "The model sees only these inputs, all from BEFORE the predicted interval: previous_interval, rolling_1h_mean, rolling_6h_mean.",
       "It cannot see: which appliance was switched on, how many people were home, cooking/laundry/visitor schedules, or meter errors.",
       "Sudden switch-on events cannot be predicted from the past alone, so the first interval of a spike is always hard.",
       "We do not claim causes for these errors."
     ]
   },
+  "selected_model_feature_importances": {
+    "previous_interval": 0.8996,
+    "rolling_1h_mean": 0.0575,
+    "rolling_6h_mean": 0.043
+  },
+  "candidate_features": [
+    "hour",
+    "hour_cyclic",
+    "day_of_week",
+    "day_of_week_cyclic",
+    "is_weekend",
+    "previous_interval",
+    "previous_hour",
+    "previous_day_same_time",
+    "rolling_1h_mean",
+    "rolling_6h_mean",
+    "rolling_24h_mean",
+    "lights_previous_interval",
+    "outdoor_weather_previous_interval",
+    "indoor_conditions_previous_interval"
+  ],
   "feature_selection": {
     "Linear Regression": {
       "selected": [

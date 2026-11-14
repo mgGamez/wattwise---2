@@ -74,9 +74,10 @@ ml/features.py       candidate features (all use only past data)
 ml/train.py          step 2: feature + model selection on validation, final test, anomalies, failure analysis
 ml/wattwise.py       reusable: predict_expected_usage(), analyse_consumption()
 model/               saved model + validation-calibrated threshold
-results/             metrics.json, predictions.csv, anomalies.csv, failure_analysis.md, figures/
+results/             metrics.json, predictions.csv, anomalies.csv, failure_analysis.csv/.md, figures/
 docs/ML_EXPLAINED.md beginner-friendly explanation
-notebook/, website/  (later)
+website/             Next.js site built from the real results (see below)
+notebook/            (later)
 ```
 
 ## Run it
@@ -99,6 +100,20 @@ all_intervals, anomalies = analyse_consumption(df["2016-05-06":])
 ```
 
 The first 24 hours of any input are used as history only and get no prediction.
+
+## Website
+
+A static Next.js site (TypeScript, Tailwind CSS, Framer Motion, Recharts) that tells the WATTWISE story with the real results. It needs no server and no API.
+
+```bash
+cd website
+npm install
+npm run dev          # http://localhost:3000
+npm run build        # static export in website/out/
+npx serve out        # preview the production build
+```
+
+`npm run dev` and `npm run build` first run `scripts/build-data.mjs`. That script reads `results/metrics.json`, `predictions.csv`, `anomalies.csv` and `failure_analysis.csv` and writes `src/data/site-data.json`. Every number on the site comes from there. If a results file is missing, the affected section shows an "unavailable" notice instead of breaking. Re-run `python ml/train.py`, then rebuild, to refresh the site.
 
 ## Rules followed
 

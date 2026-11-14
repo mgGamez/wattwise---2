@@ -150,7 +150,11 @@ The model only sees the last few hours of appliance usage. It cannot see:
 - visitors, holidays or changes in routine
 - meter errors
 
-All 10 of the largest test errors were intervals where use was far **higher** than expected, typically 450–525 Wh above. These are sudden switch-ons that the past can't predict. We don't guess what caused them.
+`results/failure_analysis.csv` lists the 5 largest errors in each direction:
+- **Under-predictions** (used far *more* than expected, 490–525 Wh above): sudden switch-ons that the past can't predict.
+- **Over-predictions** (used far *less* than expected, 232–294 Wh below): these come right after a spike, when the model still expects the high use to continue.
+
+We don't guess what caused them.
 
 ## 11. Remaining limitations
 

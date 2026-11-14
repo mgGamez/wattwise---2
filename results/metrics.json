@@ -1,0 +1,101 @@
+{
+  "building": "Rat_education_Dann (K-12 school, Washington DC, BDG2)",
+  "train_period": [
+    "2016-01-07 06:00:00",
+    "2016-12-31 23:00:00"
+  ],
+  "test_period": [
+    "2017-01-01 00:00:00",
+    "2017-12-31 23:00:00"
+  ],
+  "train_rows": 8454,
+  "test_rows": 8580,
+  "test_mean_consumption_kwh": 196.15,
+  "model_comparison": {
+    "Baseline (2016 average for same weekday + hour)": {
+      "MAE_kwh": 44.64,
+      "RMSE_kwh": 52.4
+    },
+    "Reference: copy the previous hour (no ML)": {
+      "MAE_kwh": 4.38,
+      "RMSE_kwh": 7.88
+    },
+    "Linear Regression": {
+      "MAE_kwh": 13.41,
+      "RMSE_kwh": 20.67
+    },
+    "Random Forest": {
+      "MAE_kwh": 11.12,
+      "RMSE_kwh": 17.49
+    },
+    "Gradient Boosting": {
+      "MAE_kwh": 11.33,
+      "RMSE_kwh": 16.86
+    }
+  },
+  "model_comparison_features": [
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_holiday",
+    "temperature_prev_hour",
+    "humidity_prev_hour",
+    "previous_day_same_hour",
+    "rolling_24h_average",
+    "rolling_7day_average"
+  ],
+  "best_model": "Random Forest",
+  "selection_rule": "lowest MAE on the unseen 2017 test year (pattern feature set)",
+  "best_model_feature_importances": {
+    "hour": 0.0153,
+    "day_of_week": 0.0127,
+    "month": 0.0032,
+    "is_weekend": 0.0026,
+    "is_holiday": 0.0002,
+    "temperature_prev_hour": 0.0461,
+    "humidity_prev_hour": 0.0089,
+    "previous_day_same_hour": 0.1038,
+    "rolling_24h_average": 0.7959,
+    "rolling_7day_average": 0.0113
+  },
+  "experiment_all_features_including_previous_hour": {
+    "Linear Regression": {
+      "MAE_kwh": 4.64,
+      "RMSE_kwh": 7.69
+    },
+    "Random Forest": {
+      "MAE_kwh": 4.21,
+      "RMSE_kwh": 7.26
+    },
+    "Gradient Boosting": {
+      "MAE_kwh": 4.27,
+      "RMSE_kwh": 7.28
+    }
+  },
+  "injection_test": {
+    "Random Forest - pattern features (used)": {
+      "events": 30,
+      "hours_per_event": 12,
+      "increase": "+25%",
+      "injected_hours_flagged_pct": 48.8,
+      "events_with_at_least_one_flag": 22,
+      "flags_on_untouched_hours": 211
+    },
+    "Random Forest - all features incl. previous hour": {
+      "events": 30,
+      "hours_per_event": 12,
+      "increase": "+25%",
+      "injected_hours_flagged_pct": 33.7,
+      "events_with_at_least_one_flag": 29,
+      "flags_on_untouched_hours": 192
+    }
+  },
+  "anomaly_detection": {
+    "rule": "residual >= 95th percentile of positive test residuals",
+    "threshold_kwh": 40.89,
+    "positive_residual_hours": 4553,
+    "flagged_hours": 228,
+    "flagged_periods": 49
+  }
+}

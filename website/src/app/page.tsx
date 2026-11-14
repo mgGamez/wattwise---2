@@ -21,9 +21,6 @@ import { monthName } from "@/lib/explain";
 import { fmtNum, ordinal } from "@/lib/money";
 import { enableSound, playLatch, playWhoosh } from "@/lib/sounds";
 
-const FRAMES = ["/landing/frame-1.jpg", "/landing/frame-2.jpg", "/landing/frame-3.jpg", "/landing/frame-4.jpg"];
-// "Analyze now" as drawn in frame 4 (fractions of the image), so the real button sits on top of it
-const BUTTON = { x: 0.512, y: 0.484, w: 0.27, h: 0.135 };
 const EXAMPLE_TARIFF = 8.5; // ₹/kWh, clearly labelled as an example wherever shown
 
 /* ================================================================== page */
@@ -91,44 +88,45 @@ export default function Landing() {
   );
 }
 
-/* ================================================================== scene 1: the fridge */
+/* ================================================================== scene 1: the layered 3D fridge */
+// Built from layers (body, hinged door, interior, shelves, light, shadows) — not a
+// screenshot. The door rotates around its left hinge with a real CSS 3D transform,
+// so scrolling opens it and scrolling back up closes it again.
+
+type MVN = MotionValue<number> | number;
+
 function FridgeScene({ reduce, sound }: { reduce: boolean; sound: boolean }) {
   const router = useRouter();
   const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
-  // spring-smoothed scrub: the door follows the scroll, never a timed animation
-  const p = useSpring(scrollYProgress, { stiffness: 140, damping: 30, restDelta: 0.0005 });
+  const p = useSpring(scrollYProgress, { stiffness: 150, damping: 30, restDelta: 0.0005 });
 
-  // frame crossfades (real renders of the same fridge: closed → latch → swinging → open)
-  const o1 = useTransform(p, [0, 0.26, 0.34], [1, 1, 0]);
-  const o2 = useTransform(p, [0.26, 0.34, 0.46, 0.52], [0, 1, 1, 0]);
-  const o3 = useTransform(p, [0.46, 0.52, 0.6, 0.66], [0, 1, 1, 0]);
-  const o4 = useTransform(p, [0.6, 0.66, 1], [0, 1, 1]);
-  const opacities = [o1, o2, o3, o4];
-
-  // camera: slow push-in toward the fridge; background parallax moves slower
-  const scale = useTransform(p, [0, 0.9], [0.95, 1.12]);
-  const camY = useTransform(p, [0, 1], ["0%", "-2%"]);
+  // camera: subtle push-in, then closer as the light builds
+  const cam = useTransform(p, [0, 0.15, 0.3, 0.7, 0.92], [0.92, 0.94, 1, 1.06, 1.17]);
+  const camY = useTransform(p, [0, 1], ["1.5%", "-3%"]);
   const bgY = useTransform(p, [0, 1], [0, -60]);
-  // the handle reacts just before the latch releases
-  const jiggle = useTransform(p, [0.2, 0.24, 0.28], [0, 0.5, 0]);
-  // warm interior light builds as the door opens
-  const glow = useTransform(p, [0.45, 0.85], [0, 0.55]);
-  // copy sequencing
-  const introFade = useTransform(p, [0, 0.12], [1, 0]);
-  const copyA = useTransform(p, [0.13, 0.2, 0.3, 0.37], [0, 1, 1, 0]);
-  const keepHint = useTransform(p, [0.34, 0.4, 0.5, 0.56], [0, 1, 1, 0]);
-  const copyB = useTransform(p, [0.76, 0.84], [0, 1]);
-  // the signature hand-off: a canvas-coloured circle grows out of the interior
-  const expandScale = useTransform(p, [0.88, 1], [0, 26]);
-  const expandOpacity = useTransform(p, [0.88, 0.92], [0, 1]);
+  // the door: a tiny latch nudge, then a progressive swing to ~105°
+  const door = useTransform(p, [0.24, 0.28, 0.31, 0.5, 0.72], [0, -2.5, -1, -56, -105]);
+  // interior light + warm spill onto the scene
+  const light = useTransform(p, [0.32, 0.7, 0.9], [0, 0.5, 1]);
+  const spill = useTransform(p, [0.42, 0.9], [0, 0.5]);
+  // shadows deepen and spread as the door swings out
+  const shadowO = useTransform(p, [0, 0.7], [0.4, 0.55]);
+  const shadowX = useTransform(p, [0.3, 0.72], [1, 1.22]);
+  const doorShadow = useTransform(p, [0.32, 0.72], [0, 0.28]);
+  const doorShade = useTransform(door, [-105, 0], [0.32, 0]);
+  // copy + button sequencing
+  const intro = useTransform(p, [0, 0.14], [1, 0]);
+  const openCopy = useTransform(p, [0.86, 0.95], [0, 1]);
+  const btnO = useTransform(p, [0.88, 0.96], [0, 1]);
+  const btnS = useTransform(p, [0.88, 0.98], [0.85, 1]);
 
   const [open, setOpen] = useState(false);
   const last = useRef(0);
   useMotionValueEvent(scrollYProgress, "change", (v) => {
-    setOpen(v > 0.7);
-    if (sound && last.current < 0.24 && v >= 0.24) playLatch();
-    if (sound && last.current < 0.48 && v >= 0.48) playWhoosh();
+    setOpen(v > 0.86);
+    if (sound && last.current < 0.28 && v >= 0.28) playLatch();
+    if (sound && last.current < 0.45 && v >= 0.45) playWhoosh();
     last.current = v;
   });
   const showButton = reduce || open;
@@ -145,116 +143,62 @@ function FridgeScene({ reduce, sound }: { reduce: boolean; sound: boolean }) {
     setTimeout(() => router.push("/analyze/"), 480);
   };
 
+  const analyzeButton = (
+    <motion.div style={reduce ? undefined : { opacity: btnO, scale: btnS }}>
+      <Link
+        href="/analyze/"
+        onClick={enter}
+        tabIndex={showButton ? 0 : -1}
+        aria-hidden={!showButton}
+        className={
+          "flex h-12 items-center gap-2 whitespace-nowrap rounded-full bg-ink px-6 text-[0.95rem] font-semibold text-white shadow-[0_18px_40px_-12px_rgb(29_32_36/0.65)] transition-transform hover:scale-[1.05] active:scale-[0.97] sm:h-[3.4rem] sm:px-7 sm:text-[1.05rem] " +
+          (showButton ? "" : "pointer-events-none")
+        }
+      >
+        <IconBolt size={20} /> Analyze Now
+      </Link>
+    </motion.div>
+  );
+
+  if (reduce)
+    return (
+      <section aria-label="Open your energy story" className="flex min-h-dvh flex-col items-center justify-center gap-8 px-4 pt-20" style={{ background: "#dbc3b1" }}>
+        <h1 className="text-center text-3xl font-bold text-ink">Open your energy story.</h1>
+        <Fridge door={-105} doorShade={0.32} light={1} spill={0.4} shadowO={0.5} shadowX={1.2} doorShadow={0.25} button={analyzeButton} />
+        <p className="max-w-sm text-center font-semibold text-ink-2">See what your electricity is really telling you.</p>
+      </section>
+    );
+
   return (
-    <section
-      ref={ref}
-      aria-label="Find out your electrical summary — scroll to open the fridge"
-      className={reduce ? "" : "relative h-[420vh]"}
-      style={{ background: "#d8bfae" }}
-    >
+    <section ref={ref} aria-label="Open your energy story — scroll to open the fridge" className="relative h-[320vh]" style={{ background: "#dbc3b1" }}>
       <div className="sticky top-0 flex h-dvh flex-col items-center justify-center overflow-hidden px-4">
-        {/* background moves slower than the fridge (parallax) */}
-        {!reduce && (
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute inset-[-10%]"
-            style={{ y: bgY, background: "radial-gradient(60% 55% at 50% 42%, rgb(255 246 232 / 0.55), transparent 70%)" }}
-          />
-        )}
-
-        {reduce && (
-          <h1 className="relative z-10 mb-6 mt-20 text-center text-3xl font-bold text-ink">Find out your electrical summary</h1>
-        )}
-
         <motion.div
-          className="relative w-[175vw] shrink-0 will-change-transform sm:w-full sm:max-w-[1040px]"
-          style={reduce ? { aspectRatio: "902 / 502" } : { aspectRatio: "902 / 502", scale, y: camY, rotate: jiggle }}
-        >
-          {/* soft contact shadow under the “physical” fridge */}
-          <div aria-hidden className="absolute inset-x-[18%] bottom-[2%] h-[6%] rounded-[50%] bg-[#9c7f6a]/40 blur-xl" />
-          {FRAMES.map((src, i) =>
-            reduce && i !== 3 ? null : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <motion.img
-                key={src}
-                src={src}
-                alt={i === 3 ? "An open fridge: inside is an Analyze now button instead of food" : ""}
-                aria-hidden={i !== 3}
-                className="absolute inset-0 size-full rounded-[2rem] object-cover"
-                style={{ opacity: reduce ? 1 : opacities[i] }}
-                draggable={false}
-                loading="eager"
-                fetchPriority={i < 2 ? "high" : "auto"}
-              />
-            ),
-          )}
-          {/* interior light spilling out as the door opens */}
-          {!reduce && (
-            <motion.div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-[2rem]"
-              style={{ opacity: glow, background: "radial-gradient(42% 55% at 56% 45%, rgb(255 214 150 / 0.8), transparent 72%)", mixBlendMode: "soft-light" }}
-            />
-          )}
-
-          {/* the REAL button, physically placed inside the fridge */}
-          <motion.div
-            className="absolute"
-            style={{ left: `${(BUTTON.x - BUTTON.w / 2) * 100}%`, top: `${(BUTTON.y - BUTTON.h / 2) * 100}%`, width: `${BUTTON.w * 100}%`, height: `${BUTTON.h * 100}%` }}
-            initial={false}
-            animate={{ opacity: showButton ? 1 : 0, scale: showButton ? 1 : 0.9 }}
-            transition={SPRING}
-          >
-            <Link
-              href="/analyze/"
-              onClick={enter}
-              tabIndex={showButton ? 0 : -1}
-              aria-hidden={!showButton}
-              className={`flex size-full items-center justify-center gap-2 whitespace-nowrap rounded-full bg-ink text-[clamp(0.85rem,2.6vw,1.15rem)] font-semibold text-white shadow-[0_18px_40px_-14px_rgb(29_32_36/0.6)] transition-transform hover:scale-[1.04] active:scale-[0.97] ${
-                showButton ? "" : "pointer-events-none"
-              }`}
-            >
-              <IconBolt size={20} /> Analyze now
-            </Link>
-          </motion.div>
+          aria-hidden
+          className="pointer-events-none absolute inset-[-10%]"
+          style={{ y: bgY, background: "radial-gradient(60% 55% at 50% 40%, rgb(255 243 226 / 0.6), transparent 70%)" }}
+        />
+        {/* camera */}
+        <motion.div style={{ scale: cam, y: camY }} className="will-change-transform">
+          <Fridge door={door} doorShade={doorShade} light={light} spill={spill} shadowO={shadowO} shadowX={shadowX} doorShadow={doorShadow} button={analyzeButton} />
         </motion.div>
 
-        {/* copy choreography (never on top of the fridge) */}
-        {!reduce && (
-          <>
-            <motion.p style={{ opacity: introFade }} className="pointer-events-none absolute bottom-8 flex flex-col items-center gap-2 text-sm font-semibold text-ink-2">
-              Scroll to discover
-              <motion.span animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.4 }} aria-hidden>
-                ↓
-              </motion.span>
-            </motion.p>
-            <motion.div style={{ opacity: copyA }} aria-hidden className="pointer-events-none absolute bottom-[7%] max-w-md px-6 text-center">
-              <p className="text-lg font-bold text-ink sm:text-xl">Your electricity bill shows the total.</p>
-              <p className="mt-1 text-lg font-bold text-sage-strong sm:text-xl">WATTWISE looks underneath it.</p>
-            </motion.div>
-            <motion.p style={{ opacity: keepHint }} aria-hidden className="pointer-events-none absolute bottom-[8%] text-sm font-semibold text-ink-2">
-              Keep scrolling
-            </motion.p>
-            <motion.p style={{ opacity: copyB }} aria-hidden className="pointer-events-none absolute bottom-[7%] max-w-md px-6 text-center text-lg font-bold text-ink sm:text-xl">
-              See what your electricity use is really telling you.
-            </motion.p>
-            {/* hand-off: interior “light” expands to become the page behind the next scene */}
-            <motion.div
-              aria-hidden
-              className="pointer-events-none absolute left-1/2 top-1/2 size-[18vmax] -translate-x-1/2 -translate-y-1/2 rounded-full bg-canvas"
-              style={{ scale: expandScale, opacity: expandOpacity }}
-            />
-          </>
-        )}
+        <motion.p style={{ opacity: intro }} className="pointer-events-none absolute bottom-7 flex flex-col items-center gap-1.5 text-sm font-semibold text-ink-2">
+          Scroll to explore
+          <motion.span animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.4 }} aria-hidden>
+            ↓
+          </motion.span>
+        </motion.p>
+        <motion.p style={{ opacity: openCopy }} aria-hidden className="pointer-events-none absolute bottom-7 max-w-sm px-6 text-center text-base font-bold text-ink sm:text-lg">
+          See what your electricity is really telling you.
+        </motion.p>
       </div>
 
-      {/* click transition into the real product */}
       <AnimatePresence>
         {leaving && (
           <motion.div
             className="fixed inset-0 z-50 bg-canvas"
-            initial={{ clipPath: `circle(0% at 51% 48%)` }}
-            animate={{ clipPath: `circle(150% at 51% 48%)` }}
+            initial={{ clipPath: "circle(0% at 50% 50%)" }}
+            animate={{ clipPath: "circle(150% at 50% 50%)" }}
             transition={{ duration: 0.5, ease: EASE }}
           />
         )}
@@ -263,6 +207,96 @@ function FridgeScene({ reduce, sound }: { reduce: boolean; sound: boolean }) {
   );
 }
 
+/**
+ * The fridge itself. The root sets font-size to 1% of its own width, so every
+ * "em" below is a percentage of fridge width — the whole object scales as one.
+ * The door is a real 3D panel (front face, inner face, edge) rotating around
+ * its left hinge inside a perspective container.
+ */
+function Fridge({ door, doorShade, light, spill, shadowO, shadowX, doorShadow, button }: { door: MVN; doorShade: MVN; light: MVN; spill: MVN; shadowO: MVN; shadowX: MVN; doorShadow: MVN; button: ReactNode }) {
+  const shelfTops = ["30%", "52%", "74%"];
+  return (
+    <div style={{ perspective: "1100px" }}>
+      <div className="relative" style={{ width: "min(76vw, 380px)", fontSize: "calc(min(76vw, 380px) / 100)", aspectRatio: "100 / 138" }}>
+        {/* contact shadow */}
+        <motion.div
+          aria-hidden
+          className="absolute bottom-[-2em] left-1/2 h-[7em] w-[88%] -translate-x-1/2 rounded-[50%] bg-[#7d6350]"
+          style={{ opacity: shadowO, scaleX: shadowX, filter: "blur(2em)" }}
+        />
+        {/* shadow the open door casts to the left */}
+        <motion.div aria-hidden className="absolute bottom-[-1em] left-[-38%] h-[9em] w-[62%] rounded-[50%] bg-[#6e564a]" style={{ opacity: doorShadow, filter: "blur(2.6em)" }} />
+
+        {/* feet */}
+        <div aria-hidden className="absolute bottom-0 left-[16%] h-[4.5em] w-[8em] rounded-b-[2em] bg-gradient-to-b from-[#cdc5b6] to-[#968c7b]" />
+        <div aria-hidden className="absolute bottom-0 right-[16%] h-[4.5em] w-[8em] rounded-b-[2em] bg-gradient-to-b from-[#cdc5b6] to-[#968c7b]" />
+
+        {/* body */}
+        <div
+          aria-hidden
+          className="absolute inset-x-0 bottom-[3.5em] top-0 rounded-[11em] bg-gradient-to-br from-[#fdfaf4] via-[#f4efe5] to-[#e2dac9]"
+          style={{ boxShadow: "0 3em 7em -2em rgb(90 70 50 / 0.5), inset -2em 0 4em rgb(125 100 75 / 0.14), inset 2em 2em 3em rgb(255 255 255 / 0.85), inset 0 -2em 4em rgb(125 100 75 / 0.16)" }}
+        />
+
+        {/* interior cavity (revealed by the door) */}
+        <div className="absolute bottom-[9%] left-[7%] right-[7%] top-[5%] overflow-hidden rounded-[6em] bg-[#ece4d4]" style={{ boxShadow: "inset 0 0 7em rgb(95 75 55 / 0.45), inset 0 -2.5em 5em rgb(110 88 66 / 0.25)" }}>
+          {/* back wall */}
+          <div aria-hidden className="absolute inset-[6%] rounded-[5em]" style={{ background: "radial-gradient(85% 75% at 50% 38%, #fbf4e4, #e6ddc9 78%)" }} />
+          {/* side walls */}
+          <div aria-hidden className="absolute bottom-0 left-0 top-0 w-[10%]" style={{ background: "linear-gradient(90deg, rgb(110 88 66 / 0.3), transparent)" }} />
+          <div aria-hidden className="absolute bottom-0 right-0 top-0 w-[10%]" style={{ background: "linear-gradient(-90deg, rgb(110 88 66 / 0.3), transparent)" }} />
+          {/* ceiling lamp */}
+          <div aria-hidden className="absolute left-1/2 top-[5.5%] h-[2.6em] w-[44%] -translate-x-1/2 rounded-full bg-[#fff3d2]" style={{ boxShadow: "0 0.5em 2em 0.5em rgb(255 220 150 / 0.8)" }} />
+          <motion.div aria-hidden className="absolute left-1/2 top-[3%] h-[26%] w-[70%] -translate-x-1/2 rounded-[50%] bg-[#ffe9bd]" style={{ opacity: light, filter: "blur(3em)" }} />
+          {/* shelves: top surface + front edge */}
+          {shelfTops.map((top) => (
+            <div key={top} aria-hidden className="absolute left-[10%] right-[10%]" style={{ top }}>
+              <div className="h-[3em] rounded-[1em]" style={{ background: "linear-gradient(180deg, #fffdf4, #eee5d2)" }} />
+              <div className="h-[1.4em] rounded-b-[1em]" style={{ background: "linear-gradient(180deg, #f4ecda, #d9cfb9)", boxShadow: "0 1.2em 1.6em -0.6em rgb(110 88 66 / 0.45)" }} />
+            </div>
+          ))}
+          {/* warm light wash over everything inside */}
+          <motion.div aria-hidden className="pointer-events-none absolute inset-0" style={{ opacity: light, background: "radial-gradient(70% 60% at 50% 26%, rgb(255 216 150 / 0.55), rgb(255 232 190 / 0.18) 60%, transparent 85%)" }} />
+          {/* the real button, inside the fridge */}
+          <div className="absolute inset-0 grid place-items-center">{button}</div>
+        </div>
+
+        {/* warm light spilling out of the open fridge */}
+        <motion.div aria-hidden className="pointer-events-none absolute bottom-[8%] left-[-24%] top-[6%] w-[70%] rounded-[50%] bg-[#ffd9a2]" style={{ opacity: spill, filter: "blur(4em)" }} />
+
+        {/* the door: front face + inner face + swinging edge, hinged on the left */}
+        <motion.div
+          data-testid="fridge-door"
+          aria-hidden
+          className="absolute bottom-[9%] left-[7%] right-[7%] top-[5%] will-change-transform"
+          style={{ transformOrigin: "left center", rotateY: door, transformStyle: "preserve-3d", z: 2 }}
+        >
+          {/* front face */}
+          <div
+            className="absolute inset-0 rounded-[6em] bg-gradient-to-br from-white via-[#f7f2e8] to-[#e7dfce]"
+            style={{ backfaceVisibility: "hidden", boxShadow: "inset 1.5em 1.5em 2.5em rgb(255 255 255 / 0.9), inset -1.5em -1.5em 3em rgb(125 100 75 / 0.12), 0 0.5em 2em rgb(90 70 50 / 0.18)" }}
+          >
+            <p className="px-[12%] pt-[22%] text-center font-bold leading-[1.18] text-ink" style={{ fontSize: "8em" }}>
+              Open your energy story.
+            </p>
+            {/* handle */}
+            <div className="absolute right-[8%] top-1/2 h-[19em] w-[2.8em] -translate-y-1/2 rounded-full bg-gradient-to-b from-[#eceef0] via-[#b4b8bf] to-[#878c93]" style={{ boxShadow: "0.4em 0.8em 1.4em rgb(80 70 60 / 0.45), inset 0.4em 0 0.6em rgb(255 255 255 / 0.8)" }} />
+            <div className="absolute right-[9.2%] top-[33.5%] h-[1.6em] w-[5em] rounded-full bg-[#9aa0a7]" />
+            <div className="absolute right-[9.2%] bottom-[33.5%] h-[1.6em] w-[5em] rounded-full bg-[#9aa0a7]" />
+            <motion.div aria-hidden className="absolute inset-0 rounded-[6em]" style={{ opacity: doorShade, background: "linear-gradient(105deg, rgb(90 72 55 / 0.12), rgb(90 72 55 / 0.55))" }} />
+          </div>
+          {/* door thickness (the edge you see while it swings) */}
+          <div className="absolute bottom-[1%] right-0 top-[1%] w-[3.4em] rounded-[1em]" style={{ transformOrigin: "right center", transform: "rotateY(-90deg)", background: "linear-gradient(90deg, #efe8d9, #cbc2ad)" }} />
+          {/* inner face with door racks */}
+          <div className="absolute inset-0 rounded-[6em] bg-[#f3eddf]" style={{ transform: "rotateY(180deg)", backfaceVisibility: "hidden", boxShadow: "inset 0 0 4em rgb(110 88 66 / 0.25)" }}>
+            <div className="absolute left-[10%] right-[10%] top-[30%] h-[7em] rounded-[1.5em] bg-gradient-to-b from-[#faf5e9] to-[#ded5c0]" />
+            <div className="absolute left-[10%] right-[10%] top-[62%] h-[7em] rounded-[1.5em] bg-gradient-to-b from-[#faf5e9] to-[#ded5c0]" />
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}
 /* ================================================================== scene 2: was it normal? */
 function WasItNormal({ reduce }: { reduce: boolean }) {
   const reading = site.context?.lowButUnusual ?? null; // real held-out reading: 320 Wh actual vs 77.66 expected

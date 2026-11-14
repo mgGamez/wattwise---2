@@ -167,9 +167,16 @@ def main():
         "cases": [case(ts) for ts in golden_ts],
     }
 
+    # ---- real monthly totals for the app's bill demo (partial months keep their real day count)
+    monthly = clean[TARGET].groupby(clean.index.to_period("M")).agg(["sum", "count"])
+    demo_bills = [
+        {"month": str(p), "kwh": round(float(r["sum"]) / 1000, 2), "days": round(float(r["count"]) / 144, 2)}
+        for p, r in monthly.iterrows()
+    ]
+
     OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "demo-bills.json").write_text(json.dumps(demo_bills, indent=1))
     (OUT / "wattwise-model.json").write_text(json.dumps(model_json, separators=(",", ":")))
-    (OUT / "demo-samples.json").write_text(json.dumps(demos, indent=1))
     (OUT / "golden.json").write_text(json.dumps(golden, indent=1))
     print(f"model: {len(model_json['trees'])} trees, init={model_json['init']:.6f}, lr={model_json['learningRate']}")
     print(f"demo samples: {len(demos)}  golden cases: {len(golden['cases'])}")

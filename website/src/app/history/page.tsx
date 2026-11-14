@@ -8,17 +8,18 @@ import { IconArrowRight, IconChevron, IconFlask, IconTrash } from "@/components/
 import { SPRING, useReduceMotion } from "@/components/motion";
 import { Button, ButtonLink, ConfirmInline, EmptyState, PageHeader, Segmented, SourceBadge, StatusPill } from "@/components/ui";
 import { statusOf } from "@/lib/insights";
-import { costOf, fmtKwh, fmtMoney, fmtNum, fmtSignedWh } from "@/lib/money";
+import { costOf, fmtKwh, fmtMoney, fmtNum } from "@/lib/money";
+import { monthName } from "@/lib/explain";
 import { clearAnalyses, deleteAnalysis, useAppState, type Analysis } from "@/lib/storage";
-import { fmtRelative, fmtWhen } from "@/lib/time";
+import { fmtRelative } from "@/lib/time";
 
 type Filter = "all" | "unusual" | "normal" | "demo";
 type Sort = "newest" | "oldest" | "excess" | "recent";
 
 const SORTS: Record<Sort, { label: string; fn: (a: Analysis, b: Analysis) => number }> = {
-  newest: { label: "Newest reading", fn: (a, b) => b.timestamp.localeCompare(a.timestamp) },
-  oldest: { label: "Oldest reading", fn: (a, b) => a.timestamp.localeCompare(b.timestamp) },
-  excess: { label: "Largest potential excess", fn: (a, b) => b.result.potentialExcessWh - a.result.potentialExcessWh || b.result.residualWh - a.result.residualWh },
+  newest: { label: "Newest month", fn: (a, b) => b.month.localeCompare(a.month) },
+  oldest: { label: "Oldest month", fn: (a, b) => a.month.localeCompare(b.month) },
+  excess: { label: "Largest potential excess", fn: (a, b) => b.result.potentialExcessKwh - a.result.potentialExcessKwh || b.result.residualKwh - a.result.residualKwh },
   recent: { label: "Recently analyzed", fn: (a, b) => b.createdAt.localeCompare(a.createdAt) },
 };
 
@@ -41,12 +42,12 @@ export default function HistoryPage() {
     return (
       <div className="space-y-8">
         <PageHeader eyebrow="History" title="Your analyses" />
-        <EmptyState title="Nothing saved yet" body="Analyses you save appear here, stored only in this browser.">
+        <EmptyState title="Nothing saved yet" body="Bills you analyze and save appear here, stored only in this browser.">
           <ButtonLink href="/analyze/">
-            Analyze a reading <IconArrowRight size={18} />
+            Analyze a bill <IconArrowRight size={18} />
           </ButtonLink>
           <ButtonLink href="/analyze/?demo=pick" variant="secondary">
-            <IconFlask size={18} className="text-blue" /> Try with demo data
+            <IconFlask size={18} className="text-blue" /> Try with example bills
           </ButtonLink>
         </EmptyState>
       </div>
@@ -112,7 +113,7 @@ export default function HistoryPage() {
         <ul className="space-y-3" aria-label="Saved analyses">
           <AnimatePresence initial={false}>
             {list.map((a, i) => {
-              const cost = costOf(a.result.potentialExcessWh, state.tariff);
+              const cost = costOf(a.result.potentialExcessKwh * 1000, state.tariff);
               return (
                 <motion.li
                   key={a.id}
@@ -132,23 +133,23 @@ export default function HistoryPage() {
                           <StatusPill status={statusOf(a)} size="sm" />
                           {a.source === "demo" && <SourceBadge />}
                         </span>
-                        <span className="mt-1.5 block truncate font-semibold text-ink">{fmtWhen(a.timestamp)}</span>
+                        <span className="mt-1.5 block truncate font-semibold text-ink">{monthName(a.month)}</span>
                         <span className="block text-xs text-ink-3">Analyzed {fmtRelative(a.createdAt)}</span>
                       </span>
                       <span className="w-full sm:w-40">
-                        <MiniCompare actual={a.actualWh} expected={a.result.expectedWh} flagged={a.result.flagged} />
+                        <MiniCompare actual={a.current.kwh} expected={a.result.expectedKwh} flagged={a.result.flagged} />
                         <span className="num mt-1.5 block text-xs text-ink-2">
-                          {fmtNum(a.actualWh)} Wh vs <span className="text-blue">{fmtNum(a.result.expectedWh)} Wh</span>
+                          {fmtNum(a.current.kwh)} kWh vs <span className="text-blue">{fmtNum(a.result.expectedKwh)} kWh</span>
                         </span>
                       </span>
                       <span className="grid flex-1 grid-cols-3 gap-3 text-sm">
                         <span>
                           <span className="block text-xs text-ink-3">Difference</span>
-                          <span className="num font-semibold text-ink">{fmtSignedWh(a.result.residualWh)}</span>
+                          <span className="num font-semibold text-ink">{`${a.result.residualKwh >= 0 ? "+" : "−"}${fmtNum(Math.abs(a.result.residualKwh), 1)} kWh`}</span>
                         </span>
                         <span>
                           <span className="block text-xs text-ink-3">Excess</span>
-                          <span className={`num font-semibold ${a.result.flagged ? "text-amber" : "text-ink"}`}>{fmtKwh(a.result.potentialExcessWh)}</span>
+                          <span className={`num font-semibold ${a.result.flagged ? "text-amber" : "text-ink"}`}>{fmtKwh(a.result.potentialExcessKwh * 1000)}</span>
                         </span>
                         <span>
                           <span className="block text-xs text-ink-3">Cost</span>
@@ -159,7 +160,7 @@ export default function HistoryPage() {
                     </Link>
                     <button
                       type="button"
-                      aria-label={`Delete analysis from ${fmtWhen(a.timestamp)}`}
+                      aria-label={`Delete analysis from ${monthName(a.month)}`}
                       onClick={() => setConfirmId(confirmId === a.id ? null : a.id)}
                       className="tap grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-ink-3 hover:bg-danger-soft hover:text-danger"
                     >

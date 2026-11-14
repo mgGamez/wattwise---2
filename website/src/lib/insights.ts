@@ -1,65 +1,32 @@
-// Aggregations over the user's SAVED analyses only. Nothing here invents data:
-// a period with no analyses is simply not returned.
+// Aggregations over the user's SAVED bill analyses only. Nothing is invented:
+// periods without analyses are simply not returned.
 
 import type { Analysis } from "./storage";
-import { hourOf, nowLocal, parseLocal } from "./time";
+import { monthIndex } from "./ml/bills";
 
-export type PeriodTotal = { key: string; label: string; count: number; flagged: number; excessWh: number };
+export type PeriodTotal = { key: string; label: string; count: number; flagged: number; excessKwh: number };
 
-export function periodTotals(analyses: Analysis[], now = nowLocal()): PeriodTotal[] {
-  const n = parseLocal(now);
-  const today = now.slice(0, 10);
-  const weekStart = Date.UTC(n.y, n.m - 1, n.day) - 6 * 86_400_000; // last 7 days incl. today
-  const month = now.slice(0, 7);
+const sum = (list: Analysis[]) => ({
+  count: list.length,
+  flagged: list.filter((a) => a.result.flagged).length,
+  excessKwh: list.reduce((s, a) => s + a.result.potentialExcessKwh, 0),
+});
+
+/** "This year" and "Last 12 months" by bill month, only when they contain analyses. */
+export function periodTotals(analyses: Analysis[], now = new Date()): PeriodTotal[] {
+  const thisMonth = now.getFullYear() * 12 + now.getMonth();
   const defs = [
-    { key: "today", label: "Today", test: (a: Analysis) => a.timestamp.slice(0, 10) === today },
-    {
-      key: "week",
-      label: "Last 7 days",
-      test: (a: Analysis) => {
-        const p = parseLocal(a.timestamp);
-        const day = Date.UTC(p.y, p.m - 1, p.day);
-        return day >= weekStart && day <= Date.UTC(n.y, n.m - 1, n.day);
-      },
-    },
-    { key: "month", label: "This month", test: (a: Analysis) => a.timestamp.slice(0, 7) === month },
+    { key: "year", label: `This year (${now.getFullYear()})`, test: (a: Analysis) => a.month.startsWith(String(now.getFullYear())) },
+    { key: "12m", label: "Last 12 months", test: (a: Analysis) => thisMonth - monthIndex(a.month) < 12 && thisMonth >= monthIndex(a.month) },
   ];
-  return defs
-    .map((d) => {
-      const list = analyses.filter(d.test);
-      return {
-        key: d.key,
-        label: d.label,
-        count: list.length,
-        flagged: list.filter((a) => a.result.flagged).length,
-        excessWh: list.reduce((s, a) => s + a.result.potentialExcessWh, 0),
-      };
-    })
-    .filter((p) => p.count > 0);
+  return defs.map((d) => ({ key: d.key, label: d.label, ...sum(analyses.filter(d.test)) })).filter((p) => p.count > 0);
 }
 
 export function allTimeTotal(analyses: Analysis[]): PeriodTotal {
-  return {
-    key: "all",
-    label: "All saved analyses",
-    count: analyses.length,
-    flagged: analyses.filter((a) => a.result.flagged).length,
-    excessWh: analyses.reduce((s, a) => s + a.result.potentialExcessWh, 0),
-  };
+  return { key: "all", label: "All saved analyses", ...sum(analyses) };
 }
 
-export const byReadingTime = (a: Analysis, b: Analysis) => a.timestamp.localeCompare(b.timestamp);
-
-/** Count of analyses and unusual analyses for each hour of the day. */
-export function byHour(analyses: Analysis[]) {
-  const rows = Array.from({ length: 24 }, (_, h) => ({ hour: h, total: 0, flagged: 0 }));
-  for (const a of analyses) {
-    const r = rows[hourOf(a.timestamp)];
-    r.total++;
-    if (a.result.flagged) r.flagged++;
-  }
-  return rows;
-}
+export const byMonth = (a: Analysis, b: Analysis) => a.month.localeCompare(b.month);
 
 export function checksProgress(analyses: Analysis[], checks: Record<string, Record<string, string>>) {
   let total = 0;
@@ -71,8 +38,7 @@ export function checksProgress(analyses: Analysis[], checks: Record<string, Reco
   return { total, done };
 }
 
-/** unusual = flagged (top 5% of positive surprises); below = bottom 5% of validation residuals. */
 export function statusOf(a: Analysis): "unusual" | "normal" | "below" {
   if (a.result.flagged) return "unusual";
-  return a.result.residualWh < 0 && a.result.position != null && a.result.position < 5 ? "below" : "normal";
+  return a.result.low ? "below" : "normal";
 }

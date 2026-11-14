@@ -168,7 +168,7 @@ export function StatusPill({ status, size = "md" }: { status: "unusual" | "norma
 export function SourceBadge() {
   return (
     <span className="inline-flex items-center rounded-full border border-line-strong px-2 py-0.5 text-[11px] font-semibold text-ink-2">
-      Held-out test example
+      Example bills (research dataset)
     </span>
   );
 }

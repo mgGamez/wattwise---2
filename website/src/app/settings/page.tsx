@@ -135,18 +135,6 @@ export default function SettingsPage() {
         </h2>
         <div className="mt-4 space-y-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-sm font-semibold text-ink">Default unit for readings</span>
-            <Segmented
-              label="Default unit"
-              value={state.preferences.unit}
-              onChange={(unit) => setPreferences({ unit })}
-              options={[
-                { value: "Wh", label: "Wh" },
-                { value: "kWh", label: "kWh" },
-              ]}
-            />
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm font-semibold text-ink">
               Motion
               <span className="block text-xs font-normal text-ink-3">“System” follows your device’s reduce-motion setting.</span>
@@ -174,8 +162,8 @@ export default function SettingsPage() {
             <dd className="num text-xl font-bold text-ink">{state.analyses.length}</dd>
           </div>
           <div className="rounded-2xl bg-sunken px-4 py-3">
-            <dt className="text-xs text-ink-3">Saved readings</dt>
-            <dd className="num text-xl font-bold text-ink">{Object.keys(state.readings).length}</dd>
+            <dt className="text-xs text-ink-3">Saved bills</dt>
+            <dd className="num text-xl font-bold text-ink">{Object.keys(state.bills).length}</dd>
           </div>
           <div className="rounded-2xl bg-sunken px-4 py-3">
             <dt className="text-xs text-ink-3">Storage used</dt>

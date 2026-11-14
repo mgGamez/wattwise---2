@@ -234,8 +234,8 @@ export default function Welcome() {
                   </div>
                 </div>
                 <p className="mt-5 text-sm leading-relaxed text-ink-2">
-                  WATTWISE analyzes 10-minute readings with a model trained on one home’s appliance energy data. Results for very different
-                  buildings are less certain, and WATTWISE tells you when inputs are outside what it learned from.
+                  WATTWISE learns what’s normal for you from your own monthly bills. Keep a few past bills handy: you’ll need the kWh (units) from at
+                  least three earlier months.
                 </p>
                 <Button size="lg" className="mt-8 w-full" onClick={finish}>
                   Start analyzing <IconArrowRight size={18} />

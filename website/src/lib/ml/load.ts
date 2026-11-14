@@ -9,21 +9,6 @@ export function loadModel(): Promise<ModelJson> {
   return cached;
 }
 
-export type DemoSample = {
-  id: string;
-  label: string;
-  description: string;
-  timestamp: string;
-  actualWh: number;
-  history: number[];
-  pythonReference: { expectedWh: number; percentile: number };
-};
-
-export async function loadDemos(): Promise<DemoSample[]> {
-  const m = await import("@/data/demo-samples.json");
-  return (m.default ?? m) as unknown as DemoSample[];
-}
-
 export type GoldenCase = {
   timestamp: string;
   actualWh: number;

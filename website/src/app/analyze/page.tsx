@@ -7,41 +7,28 @@ import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { ResultView, type ResultData } from "@/components/result";
 import { IconArrowRight, IconBolt, IconCheck, IconFlask } from "@/components/icons";
 import { EASE, SPRING, useReduceMotion } from "@/components/motion";
-import { Button, ButtonLink, PageHeader, PrivacyNote, Segmented } from "@/components/ui";
+import { Button, ButtonLink, PageHeader, PrivacyNote } from "@/components/ui";
 import { suggestActions } from "@/lib/actions";
-import { analyse, inputsFromHistory, type ModelInputs } from "@/lib/ml/gbm";
-import { loadDemos, loadModel, type DemoSample } from "@/lib/ml/load";
-import { site } from "@/lib/data";
-import { fmtNum } from "@/lib/money";
-import { saveAnalysis, toggleAction, useAppState, type Analysis, type ContextMethod } from "@/lib/storage";
-import { addMinutes, floorTo10, fmtInterval, fmtWhen, isValidLocal, nowLocal } from "@/lib/time";
-import { fmtBoth, fmtEnergy, intervalFromTotal } from "@/lib/units";
-import { UsageConverter } from "@/components/converter";
+import { monthName, monthShort } from "@/lib/explain";
+import { analyseBill, daysInMonth, MIN_HISTORY, monthIndex, type Bill } from "@/lib/ml/bills";
+import demoBills from "@/data/demo-bills.json";
+import { saveAnalysis, toggleAction, useAppState, type Analysis } from "@/lib/storage";
 
-const HISTORY = 36;
+const MAX_HISTORY = 12;
 
-function parseNumber(text: string): number | null {
-  const t = text.trim().replace(",", ".");
-  if (!t) return null;
-  const v = Number(t);
-  return Number.isFinite(v) ? v : null;
-}
-
-function parseList(text: string): (number | null)[] {
-  return text
-    .split(/[\s,;]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      const v = Number(s);
-      return Number.isFinite(v) ? v : null;
-    });
-}
-
-const newId = () =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `a-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
+const fromIndex = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+const previousMonth = () => {
+  const d = new Date();
+  return fromIndex(d.getFullYear() * 12 + d.getMonth() - 1);
+};
+const parseKwh = (t: string) => {
+  const v = Number(t.trim().replace(",", "."));
+  return t.trim() !== "" && Number.isFinite(v) && v >= 0 ? v : null;
+};
+const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `a-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type Row = { kwh: string; days: number };
 
 export default function AnalyzePage() {
   return (
@@ -56,158 +43,112 @@ function Analyze() {
   const params = useSearchParams();
   const reduce = useReduceMotion();
 
-  const [when, setWhen] = useState(() => floorTo10(nowLocal()));
-  const [unit, setUnit] = useState<"Wh" | "kWh">(state.preferences.unit);
-  const [actualText, setActualText] = useState("");
-  const [mode, setMode] = useState<ContextMethod>("saved-history");
-  const [pasteText, setPasteText] = useState("");
-  // totals as people know them: the previous 10 minutes, the whole last hour, the whole last 6 hours
-  const [summary, setSummary] = useState({ prev: "", h1: "", h6: "" });
-  const [usage, setUsage] = useState<{ amount: string; period: "month" | "day" }>({ amount: "", period: "month" });
-  const [demo, setDemo] = useState<DemoSample | null>(null);
+  const [month, setMonth] = useState(previousMonth);
+  const [kwhText, setKwhText] = useState("");
+  const [billDays, setBillDays] = useState<number | null>(null); // null = calendar days of the month
+  const [rows, setRows] = useState<Record<string, Row>>({});
+  const [showAll, setShowAll] = useState(false);
+  const [demo, setDemo] = useState(false);
   const [step, setStep] = useState(1);
   const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
   const [stage, setStage] = useState(0);
   const [result, setResult] = useState<(ResultData & { signature: string }) | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showDemos, setShowDemos] = useState(false);
-  const [demos, setDemos] = useState<DemoSample[] | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  const scale = unit === "kWh" ? 1000 : 1;
+  const monthValid = /^\d{4}-\d{2}$/.test(month);
+  const days = billDays ?? (monthValid ? daysInMonth(month) : 30);
+  const kwh = parseKwh(kwhText);
 
-  // ---- derived values
-  const whenValid = isValidLocal(when);
-  const actualRaw = parseNumber(actualText);
-  const actualWh = actualRaw === null ? null : actualRaw * scale;
-  const actualValid = actualWh !== null && actualWh >= 0 && actualWh <= 1_000_000;
+  // the 12 months before the bill, newest first
+  const priorMonths = useMemo(
+    () => (monthValid ? Array.from({ length: MAX_HISTORY }, (_, i) => fromIndex(monthIndex(month) - 1 - i)) : []),
+    [month, monthValid],
+  );
 
-  const savedHistory = useMemo(() => {
-    if (!whenValid) return [] as (number | null)[];
-    return Array.from({ length: HISTORY }, (_, i) => state.readings[addMinutes(when, -10 * (HISTORY - i))] ?? null);
-  }, [state.readings, when, whenValid]);
-  const savedFound = savedHistory.filter((v) => v !== null).length;
+  // pre-fill earlier months from saved bills whenever the bill month changes (manual edits win)
+  useEffect(() => {
+    if (demo) return;
+    setRows((prev) => {
+      const next: Record<string, Row> = {};
+      for (const m of priorMonths) {
+        const saved = state.bills[m];
+        next[m] = prev[m] ?? (saved ? { kwh: String(saved.kwh), days: saved.days } : { kwh: "", days: daysInMonth(m) });
+      }
+      return next;
+    });
+  }, [priorMonths, state.bills, demo]);
 
-  const pasted = useMemo(() => parseList(pasteText).map((v) => (v === null ? null : v * scale)), [pasteText, scale]);
+  const history: Bill[] = useMemo(
+    () =>
+      priorMonths
+        .map((m) => ({ month: m, kwh: parseKwh(rows[m]?.kwh ?? ""), days: rows[m]?.days ?? daysInMonth(m) }))
+        .filter((b): b is Bill => b.kwh !== null),
+    [priorMonths, rows],
+  );
+  const badRows = priorMonths.filter((m) => (rows[m]?.kwh ?? "").trim() !== "" && parseKwh(rows[m].kwh) === null);
 
-  // Totals -> the model's per-10-minute averages (1 hour = 6 intervals, 6 hours = 36).
-  const summaryCheck = useMemo((): { inputs: ModelInputs | null; error: string | null } => {
-    const p = parseNumber(summary.prev);
-    const h1 = parseNumber(summary.h1);
-    const h6 = parseNumber(summary.h6);
-    if (p === null || h1 === null || h6 === null) return { inputs: null, error: null };
-    if (p < 0 || h1 < 0 || h6 < 0) return { inputs: null, error: "Values can’t be negative." };
-    if (h1 + 1e-9 < p)
-      return { inputs: null, error: "The last-hour total includes the previous 10 minutes, so it can’t be smaller than that reading." };
-    if (h6 + 1e-9 < h1) return { inputs: null, error: "The 6-hour total includes the last hour, so it can’t be smaller than the last-hour total." };
-    return { inputs: { previous_interval: p * scale, rolling_1h_mean: (h1 * scale) / 6, rolling_6h_mean: (h6 * scale) / 36 }, error: null };
-  }, [summary, scale]);
-
-  const usagePerInterval = useMemo(() => {
-    const v = parseNumber(usage.amount);
-    return v !== null && v > 0 ? intervalFromTotal(v, usage.period) : null;
-  }, [usage]);
-
-  const inputs: ModelInputs | null = useMemo(() => {
-    if (mode === "saved-history") return inputsFromHistory(savedHistory, HISTORY);
-    if (mode === "pasted-history") return inputsFromHistory(pasted, HISTORY);
-    if (mode === "estimated-from-usage")
-      return usagePerInterval === null
-        ? null
-        : { previous_interval: usagePerInterval, rolling_1h_mean: usagePerInterval, rolling_6h_mean: usagePerInterval };
-    return summaryCheck.inputs;
-  }, [mode, savedHistory, pasted, summaryCheck, usagePerInterval]);
-
-  const signature = JSON.stringify([when, actualWh, inputs]);
+  const signature = JSON.stringify([month, kwh, days, history]);
   const stale = result !== null && result.signature !== signature;
 
-  // default to saved history when it is complete
-  useEffect(() => {
-    if (!demo && savedFound === HISTORY) setMode("saved-history");
-    else if (!demo && mode === "saved-history" && savedFound < HISTORY && pasteText === "") setMode("pasted-history");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedFound]);
+  const step1Done = monthValid;
+  const step2Done = kwh !== null && days > 0;
+  const step3Done = history.length >= MIN_HISTORY && badRows.length === 0;
 
-  // ---- demo data
-  const openDemos = async () => {
-    setShowDemos(true);
-    if (!demos) setDemos(await loadDemos());
+  const edit = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    setDemo(false);
   };
 
-  const applyDemo = (d: DemoSample) => {
-    setDemo(d);
-    setWhen(d.timestamp);
-    setUnit("Wh");
-    setActualText(String(d.actualWh));
-    setMode("pasted-history");
-    setPasteText(d.history.join(", "));
+  // ---- real example bills (monthly totals from the research dataset)
+  const loadDemo = () => {
+    const bills = demoBills as Bill[];
+    const current = bills[bills.length - 1];
+    setDemo(true);
+    setMonth(current.month);
+    setKwhText(String(current.kwh));
+    setBillDays(current.days);
+    setRows(Object.fromEntries(bills.slice(0, -1).map((b) => [b.month, { kwh: String(b.kwh), days: b.days }])));
     setResult(null);
     setSavedId(null);
     setPhase("idle");
-    setShowDemos(false);
     setStep(4);
   };
-
   useEffect(() => {
-    const q = params.get("demo");
-    if (!q) return;
-    loadDemos().then((list) => {
-      setDemos(list);
-      const match = list.find((d) => d.id === q);
-      if (match) applyDemo(match);
-      else setShowDemos(true);
-    });
+    if (params.get("demo")) loadDemo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  // Any manual edit means this is no longer the untouched held-out example.
-  const editField = <T,>(setter: (v: T) => void) => (v: T) => {
-    setter(v);
-    setDemo(null);
-  };
-
-  // ---- run the real model
   const run = async () => {
-    if (!whenValid || !actualValid || !inputs || actualWh === null) return;
+    if (!step1Done || !step2Done || !step3Done || kwh === null) return;
     setError(null);
     setPhase("running");
     setStage(0);
     setSavedId(null);
     try {
-      const model = await loadModel();
+      if (!reduce) await sleep(300);
       setStage(1);
-      if (!reduce) await sleep(320);
-      const inf = analyse(model, actualWh, inputs);
+      const current: Bill = { month, kwh, days };
+      const r = analyseBill(history, current);
+      if (!reduce) await sleep(300);
       setStage(2);
-      if (!reduce) await sleep(320);
       const res = {
-        expectedWh: inf.expectedWh,
-        residualWh: inf.residualWh,
-        percentile: inf.percentile,
-        flagged: inf.flagged,
-        thresholdWh: inf.thresholdWh,
-        potentialExcessWh: inf.flagged ? inf.residualWh : 0,
-        outOfRange: inf.outOfRange,
-        position: inf.position,
+        expectedKwh: r.expectedKwh,
+        expectedPerDay: r.expectedPerDay,
+        actualPerDay: r.actualPerDay,
+        residualKwh: r.residualKwh,
+        z: r.z,
+        percentile: r.percentile,
+        flagged: r.flagged,
+        low: r.low,
+        potentialExcessKwh: r.potentialExcessKwh,
+        fit: r.fit,
       };
-      const actions = suggestActions({ timestamp: when, result: res }, state.profile.buildingType, state.analyses);
-      setStage(3);
+      const actions = suggestActions({ month, result: res }, state.profile.buildingType, state.analyses);
       if (!reduce) await sleep(260);
-      setResult({
-        signature,
-        timestamp: when,
-        source: demo ? "demo" : "manual",
-        demoId: demo?.id,
-        actualWh,
-        contextMethod: mode,
-        inputs: inf.inputs,
-        result: res,
-        explanation: inf.explanation,
-        model: { name: model.modelName, format: model.format, trees: inf.treesEvaluated },
-        actions,
-        pythonReference: demo ? demo.pythonReference : undefined,
-      });
+      setStage(3);
+      setResult({ signature, month, source: demo ? "demo" : "manual", current, history, result: res, actions });
       setPhase("done");
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" }));
     } catch (e) {
@@ -219,20 +160,19 @@ function Analyze() {
   const save = () => {
     if (!result || stale) return;
     const id = newId();
-    const { signature: _sig, ...data } = result;
-    void _sig;
-    const analysis: Analysis = { ...data, id, createdAt: new Date().toISOString() };
-    const readings: Record<string, number> = {};
-    if (mode === "pasted-history") pasted.forEach((v, i) => v !== null && (readings[addMinutes(when, -10 * (HISTORY - i))] = v));
-    saveAnalysis(analysis, readings);
+    const { signature: _s, ...data } = result;
+    void _s;
+    const a: Analysis = { ...data, id, createdAt: new Date().toISOString() };
+    saveAnalysis(a);
     setSavedId(id);
   };
 
   const analyzeNext = () => {
-    setWhen(addMinutes(when, 10));
-    setActualText("");
-    setDemo(null);
-    setMode("saved-history");
+    setMonth(fromIndex(monthIndex(month) + 1));
+    setKwhText("");
+    setBillDays(null);
+    setDemo(false);
+    setRows({});
     setResult(null);
     setSavedId(null);
     setPhase("idle");
@@ -240,85 +180,31 @@ function Analyze() {
     window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
   };
 
-  const step1Done = whenValid;
-  const step2Done = actualValid;
-  const step3Done = inputs !== null;
+  const visibleMonths = showAll ? priorMonths : priorMonths.slice(0, 6);
 
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Analyze energy"
-        title="Is this reading normal?"
-        sub="Enter one 10-minute reading. WATTWISE predicts what it expected and shows how much looks unusually high."
+        eyebrow="Analyze a bill"
+        title="Is this month’s bill normal?"
+        sub="Enter the electricity (kWh) from your bill. WATTWISE learns your normal from your past bills and shows how much looks unusually high, and what it costs."
         aside={
-          <Button variant="secondary" onClick={openDemos} aria-expanded={showDemos}>
-            <IconFlask size={18} className="text-blue" /> Try with demo data
+          <Button variant="secondary" onClick={loadDemo}>
+            <IconFlask size={18} className="text-blue" /> Try with example bills
           </Button>
         }
       />
-
-      <AnimatePresence>
-        {showDemos && (
-          <motion.section
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: EASE }}
-            className="overflow-hidden"
-            aria-label="Demo data"
-          >
-            <div className="surface p-5 sm:p-7">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-bold text-ink">Held-out test examples</h2>
-                  <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-2">
-                    Real readings from the final test period, which the model never saw in training. Each one comes with its 6 hours of real
-                    history and runs through the same in-browser model as your own readings.
-                  </p>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowDemos(false)}>
-                  Close
-                </Button>
-              </div>
-              {!demos ? (
-                <p className="mt-5 text-sm text-ink-3" role="status">
-                  Loading examples…
-                </p>
-              ) : (
-                <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {demos.map((d, i) => (
-                    <motion.li key={d.id} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING, delay: i * 0.04 }}>
-                      <button
-                        type="button"
-                        onClick={() => applyDemo(d)}
-                        className="tap group flex h-full w-full cursor-pointer flex-col rounded-2xl border border-line bg-canvas p-4 text-left transition-colors hover:border-blue/50 hover:bg-blue-soft/50"
-                      >
-                        <span className="text-[11px] font-semibold uppercase tracking-wide text-blue">{d.label}</span>
-                        <span className="mt-1.5 font-semibold text-ink">{d.description}</span>
-                        <span className="mt-1 text-sm text-ink-3">{fmtWhen(d.timestamp)}</span>
-                        <span className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-ink-2 group-hover:text-blue">
-                          Load example <IconArrowRight size={15} />
-                        </span>
-                      </button>
-                    </motion.li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </motion.section>
-        )}
-      </AnimatePresence>
 
       {demo && (
         <p className="flex flex-wrap items-center gap-2 rounded-2xl bg-blue-soft px-4 py-3 text-sm text-blue">
           <IconFlask size={16} />
           <span>
-            <strong>Held-out test example</strong> loaded: {demo.description.toLowerCase()}. Edit any value to make it your own.
+            <strong>Example bills loaded:</strong> real monthly totals for one home from the research dataset (Jan–May 2016; January and May are partial
+            months). Edit any value to make it your own.
           </span>
         </p>
       )}
 
-      {/* ---- Guided steps */}
       <ol className="relative space-y-4">
         <span aria-hidden className="absolute bottom-6 left-[1.6rem] top-6 hidden w-0.5 rounded-full bg-line sm:block" />
         <motion.span
@@ -330,232 +216,125 @@ function Analyze() {
           transition={{ duration: 0.5, ease: EASE }}
         />
 
-        <Step n={1} title="When?" active={step === 1} done={step1Done && step !== 1} summary={whenValid ? `${fmtWhen(when)} (${fmtInterval(when)})` : ""} onOpen={() => setStep(1)}>
+        <Step n={1} title="Which bill?" active={step === 1} done={step1Done && step !== 1} summary={monthValid ? monthName(month) : ""} onOpen={() => setStep(1)}>
           <label className="block">
-            <span className="text-sm font-semibold text-ink">Start of the 10-minute interval</span>
+            <span className="text-sm font-semibold text-ink">Billing month</span>
             <input
-              type="datetime-local"
-              step={600}
-              value={when}
-              onChange={(e) => e.target.value && editField(setWhen)(floorTo10(e.target.value.slice(0, 16)))}
-              className="mt-2 h-14 w-full max-w-sm rounded-2xl border border-line-strong bg-surface px-4 text-lg font-semibold text-ink"
+              type="month"
+              value={month}
+              onChange={(e) => e.target.value && edit(setMonth)(e.target.value)}
+              className="mt-2 h-14 w-full max-w-xs rounded-2xl border border-line-strong bg-surface px-4 text-lg font-semibold text-ink"
             />
           </label>
-          <p className="mt-2 text-sm text-ink-3">Readings are grouped into 10-minute intervals, rounded down to the nearest 10 minutes.</p>
-          <StepNext disabled={!whenValid} onClick={() => setStep(2)} />
+          <StepNext disabled={!step1Done} onClick={() => setStep(2)} />
         </Step>
 
         <Step
           n={2}
-          title="How much energy?"
+          title="How much electricity?"
           active={step === 2}
           done={step2Done && step !== 2}
-          summary={actualValid && actualWh !== null ? `${fmtNum(actualWh, actualWh % 1 ? 1 : 0)} Wh in ${fmtInterval(when)}` : ""}
+          summary={kwh !== null ? `${kwh.toLocaleString("en")} kWh over ${days % 1 ? days.toFixed(1) : days} days` : ""}
           onOpen={() => setStep(2)}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm font-semibold text-ink">Energy used in this interval</span>
-            <Segmented
-              size="sm"
-              label="Unit"
-              value={unit}
-              onChange={editField(setUnit)}
-              options={[
-                { value: "Wh", label: "Wh" },
-                { value: "kWh", label: "kWh" },
-              ]}
-            />
-          </div>
-          <div className="mt-3 flex h-20 max-w-sm items-center rounded-3xl border border-line-strong bg-surface px-5 focus-within:border-blue">
+          <span className="text-sm font-semibold text-ink">Electricity used, from your bill</span>
+          <div className="mt-2 flex h-20 max-w-sm items-center rounded-3xl border border-line-strong bg-surface px-5 focus-within:border-blue">
             <input
-              aria-label={`Actual reading in ${unit}`}
+              aria-label="Electricity used in kWh"
               inputMode="decimal"
-              value={actualText}
-              onChange={(e) => editField(setActualText)(e.target.value)}
+              value={kwhText}
+              onChange={(e) => edit(setKwhText)(e.target.value)}
               className="num h-full w-full bg-transparent text-4xl font-bold text-ink outline-none"
             />
-            <span className="text-lg font-semibold text-ink-3">{unit}</span>
+            <span className="text-lg font-semibold text-ink-3">kWh</span>
           </div>
-          <p className={`mt-2 text-sm ${actualText && !actualValid ? "text-danger" : "text-ink-3"}`}>
-            {actualText && !actualValid
-              ? "Enter a number of zero or more."
-              : "The energy your meter recorded in these 10 minutes only, not a daily or monthly total."}
+          <p className={`mt-2 text-sm ${kwhText && kwh === null ? "text-danger" : "text-ink-3"}`}>
+            {kwhText && kwh === null ? "Enter a number of zero or more." : "Look for “units consumed” or “kWh” on your bill. 1 unit = 1 kWh."}
           </p>
-          {actualValid && actualWh !== null && (
-            <p className="mt-2 rounded-2xl bg-sunken px-4 py-3 text-sm leading-relaxed text-ink-2">
-              <strong className="text-ink">{fmtBoth(actualWh)}</strong> in 10 minutes. If use stayed at this rate, that’s{" "}
-              <span className="num">{fmtEnergy(actualWh * 6)}</span> per hour, <span className="num">{fmtEnergy(actualWh * 144)}</span> per day or{" "}
-              <span className="num">{fmtEnergy(actualWh * 4320)}</span> per month.
+          {kwh !== null && days > 0 && (
+            <p className="mt-2 rounded-2xl bg-sunken px-4 py-3 text-sm text-ink-2">
+              That’s about <strong className="num text-ink">{(kwh / days).toLocaleString("en", { maximumFractionDigits: 2 })} kWh per day</strong>, or{" "}
+              <span className="num">{(kwh / days / 24).toLocaleString("en", { maximumFractionDigits: 3 })} kWh per hour</span> on average.
             </p>
           )}
-          <details className="mt-3 rounded-2xl border border-line bg-canvas px-4 py-3 text-sm">
-            <summary className="cursor-pointer font-semibold text-blue">Only know your monthly or daily use? Convert it</summary>
-            <div className="mt-3">
-              <UsageConverter value={usage} onChange={setUsage} />
-            </div>
-          </details>
-          <StepNext disabled={!actualValid} onClick={() => setStep(3)} />
+          <label className="mt-4 flex flex-wrap items-center gap-2 text-sm text-ink-2">
+            Billing period
+            <input
+              aria-label="Days in billing period"
+              inputMode="numeric"
+              value={days % 1 ? days.toFixed(2) : String(days)}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                edit(setBillDays)(Number.isFinite(v) && v > 0 && v <= 62 ? v : null);
+              }}
+              className="num h-10 w-20 rounded-xl border border-line-strong bg-surface px-3 text-center font-semibold text-ink"
+            />
+            days <span className="text-ink-3">(change it if your bill covers a different number of days)</span>
+          </label>
+          <StepNext disabled={!step2Done} onClick={() => setStep(3)} />
         </Step>
 
         <Step
           n={3}
-          title="Recent context"
+          title="Your past bills"
           active={step === 3}
           done={step3Done && step !== 3}
-          summary={inputs ? `Previous 10 min ${fmtEnergy(inputs.previous_interval)} · last hour ${fmtEnergy(inputs.rolling_1h_mean * 6)} · last 6 h ${fmtEnergy(inputs.rolling_6h_mean * 36)}` : ""}
+          summary={history.length ? `${history.length} past month${history.length === 1 ? "" : "s"} entered` : ""}
           onOpen={() => setStep(3)}
         >
           <p className="text-sm leading-relaxed text-ink-2">
-            The model needs what happened in the <strong className="text-ink">6 hours before</strong> this interval. WATTWISE never fills in
-            missing readings.
+            WATTWISE learns what’s normal for <strong className="text-ink">you</strong> from earlier bills. Enter at least {MIN_HISTORY} months (more is better; from 6
+            months it also learns your trend). Saved bills fill in automatically.
           </p>
-          <div className="mt-4">
-            <Segmented
-              label="How to provide recent context"
-              value={mode}
-              onChange={editField(setMode)}
-              options={[
-                { value: "saved-history", label: `Saved (${savedFound}/36)` },
-                { value: "pasted-history", label: "Paste 36 readings" },
-                { value: "summary-values", label: "Enter totals" },
-                { value: "estimated-from-usage", label: "From monthly/daily use" },
-              ]}
-            />
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleMonths.map((m) => {
+              const row = rows[m] ?? { kwh: "", days: daysInMonth(m) };
+              const bad = row.kwh.trim() !== "" && parseKwh(row.kwh) === null;
+              return (
+                <label key={m} className={`flex h-12 items-center gap-2 rounded-2xl border bg-surface px-3 focus-within:border-blue ${bad ? "border-danger" : "border-line-strong"}`}>
+                  <span className="w-16 shrink-0 text-sm font-semibold text-ink-2">{monthShort(m)}</span>
+                  <input
+                    aria-label={`${monthName(m)} kWh`}
+                    inputMode="decimal"
+                    value={row.kwh}
+                    onChange={(e) => edit(setRows)({ ...rows, [m]: { ...row, kwh: e.target.value } })}
+                    className="num w-full bg-transparent text-right text-lg font-semibold text-ink outline-none"
+                  />
+                  <span className="text-sm text-ink-3">kWh</span>
+                </label>
+              );
+            })}
           </div>
-
-          <div className="mt-5">
-            {mode === "saved-history" &&
-              (savedFound === HISTORY ? (
-                <p className="flex items-center gap-2 rounded-2xl bg-sage-soft px-4 py-3 text-sm text-sage-strong">
-                  <IconCheck size={16} /> Found all 36 readings before {fmtInterval(when)} in your saved history.
-                </p>
-              ) : (
-                <div className="rounded-2xl bg-sunken px-4 py-4 text-sm leading-relaxed text-ink-2">
-                  <p>
-                    Found <strong className="text-ink">{savedFound} of 36</strong> readings from {fmtWhen(addMinutes(when, -360))} to{" "}
-                    {fmtWhen(addMinutes(when, -10))}.
-                  </p>
-                  <p className="mt-1">
-                    Saved readings build up as you analyze consecutive intervals. For now, paste the last 36 readings or enter summary values.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1" aria-label={`${savedFound} of 36 readings available`}>
-                    {savedHistory.map((v, i) => (
-                      <span key={i} className={`size-2.5 rounded-sm ${v === null ? "bg-line-strong" : "bg-sage-bright"}`} />
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-            {mode === "pasted-history" && (
-              <label className="block">
-                <span className="text-sm font-semibold text-ink">
-                  The 36 readings before this interval, oldest first ({unit}, separated by commas, spaces or new lines)
-                </span>
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => editField(setPasteText)(e.target.value)}
-                  rows={4}
-                  className="num mt-2 w-full rounded-2xl border border-line-strong bg-surface p-4 text-sm text-ink outline-none focus:border-blue"
-                />
-                <span
-                  className={`mt-1 block text-sm ${
-                    pasted.length === HISTORY && !pasted.includes(null) ? "text-sage-strong" : pasteText ? "text-danger" : "text-ink-3"
-                  }`}
-                >
-                  {pasted.includes(null)
-                    ? "Some entries aren’t numbers."
-                    : `${pasted.length} of 36 readings${pasted.length > HISTORY ? " (too many: provide exactly 36)" : ""}`}
-                </span>
-              </label>
-            )}
-
-            {mode === "summary-values" && (
-              <div>
-              <p className="mb-3 text-sm text-ink-2">
-                Enter the <strong className="text-ink">total energy</strong> used in each period before this interval. WATTWISE converts the totals to
-                per-10-minute averages for the model.
-              </p>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {(
-                  [
-                    ["prev", "Previous 10 minutes", "the 10 minutes just before"],
-                    ["h1", "Total for the last hour", "includes the previous 10 minutes"],
-                    ["h6", "Total for the last 6 hours", "includes the last hour"],
-                  ] as const
-                ).map(([k, label, hint]) => (
-                  <label key={k} className="block">
-                    <span className="text-sm font-semibold text-ink">{label}</span>
-                    <span className="block text-xs text-ink-3">{hint}</span>
-                    <div className="mt-2 flex h-12 items-center rounded-2xl border border-line-strong bg-surface px-3 focus-within:border-blue">
-                      <input
-                        inputMode="decimal"
-                        value={summary[k]}
-                        onChange={(e) => editField(setSummary)({ ...summary, [k]: e.target.value })}
-                        className="num w-full bg-transparent text-lg font-semibold text-ink outline-none"
-                      />
-                      <span className="text-sm text-ink-3">{unit}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              {summaryCheck.error && (
-                <p role="alert" className="mt-3 text-sm text-danger">
-                  {summaryCheck.error}
-                </p>
-              )}
-              </div>
-            )}
-
-            {mode === "estimated-from-usage" && (
-              <div>
-                <p className="mb-3 text-sm leading-relaxed text-ink-2">
-                  No recent readings? Use your average from a bill or app. WATTWISE spreads it evenly over time, so the result is an{" "}
-                  <strong className="text-ink">estimate</strong> and less precise than real recent readings.
-                </p>
-                <UsageConverter value={usage} onChange={editField(setUsage)} />
-              </div>
-            )}
-          </div>
-
-          {inputs && (
-            <div className="mt-5 grid gap-2 sm:grid-cols-3">
-              {(
-                [
-                  ["Previous 10 minutes", inputs.previous_interval, 1],
-                  ["Last hour", inputs.rolling_1h_mean, 6],
-                  ["Last 6 hours", inputs.rolling_6h_mean, 36],
-                ] as const
-              ).map(([k, v, n]) => (
-                <div key={k} className="rounded-2xl border border-line bg-canvas px-4 py-3">
-                  <p className="text-xs font-semibold text-ink-3">{k}</p>
-                  <p className="num text-lg font-bold text-ink">
-                    {fmtEnergy(v * n)}
-                    {n > 1 ? " total" : ""}
-                  </p>
-                  {n > 1 && <p className="num text-xs text-ink-2">= {fmtEnergy(v)} per 10 min (model input)</p>}
-                </div>
-              ))}
-            </div>
+          {!showAll && (
+            <button type="button" onClick={() => setShowAll(true)} className="mt-3 cursor-pointer text-sm font-semibold text-blue underline-offset-4 hover:underline">
+              Show 6 more months
+            </button>
           )}
-          <StepNext disabled={!inputs} onClick={() => setStep(4)} />
+          <p className={`mt-3 text-sm ${badRows.length ? "text-danger" : history.length >= MIN_HISTORY ? "text-sage-strong" : "text-ink-3"}`}>
+            {badRows.length
+              ? "Some months aren’t numbers."
+              : history.length >= MIN_HISTORY
+                ? `${history.length} months entered, enough to learn your normal.`
+                : `${history.length} of ${MIN_HISTORY} months needed.`}
+          </p>
+          <StepNext disabled={!step3Done} onClick={() => setStep(4)} />
         </Step>
 
         <Step n={4} title="Run the analysis" active={step === 4} done={false} summary="" onOpen={() => setStep(4)}>
           {!(step1Done && step2Done && step3Done) ? (
             <p className="text-sm text-ink-2">
-              Complete{" "}
-              {[!step1Done && "when", !step2Done && "the reading", !step3Done && "recent context"].filter(Boolean).join(", ")} first.
+              Complete {[!step1Done && "the month", !step2Done && "this bill’s kWh", !step3Done && `at least ${MIN_HISTORY} past bills`].filter(Boolean).join(", ")} first.
             </p>
           ) : (
             <div className="flex flex-col items-start gap-5">
               <p className="text-sm leading-relaxed text-ink-2">
-                Runs the trained {site.model?.selected.name ?? "WATTWISE"} model locally in this browser, with the same trees and anomaly
-                calibration as the research pipeline. No data leaves this device.
+                WATTWISE fits a model to your {history.length} past bills in this browser, predicts {monthName(month)}, and checks it against your usual variation.
+                No data leaves this device.
               </p>
               <Button size="lg" onClick={run} disabled={phase === "running"}>
                 <IconBolt size={20} /> {phase === "running" ? "Analyzing…" : result && !stale ? "Analyze again" : "Analyze with WATTWISE"}
               </Button>
-              <AnimatePresence>{phase === "running" && <RunStages stage={stage} />}</AnimatePresence>
+              <AnimatePresence>{phase === "running" && <RunStages stage={stage} n={history.length} month={monthName(month)} />}</AnimatePresence>
               {error && (
                 <p role="alert" className="rounded-2xl bg-danger-soft px-4 py-3 text-sm text-danger">
                   {error}
@@ -566,7 +345,6 @@ function Analyze() {
         </Step>
       </ol>
 
-      {/* ---- Result */}
       <div ref={resultRef} className="scroll-mt-24">
         <AnimatePresence>
           {result && phase === "done" && (
@@ -596,7 +374,7 @@ function Analyze() {
                             Open in history
                           </ButtonLink>
                           <Button onClick={analyzeNext}>
-                            Analyze next interval <IconArrowRight size={18} />
+                            Analyze next month <IconArrowRight size={18} />
                           </Button>
                         </div>
                       </>
@@ -619,11 +397,6 @@ function Analyze() {
         </AnimatePresence>
       </div>
 
-      {state.analyses.length === 0 && phase !== "done" && (
-        <p className="text-center text-sm text-ink-3">
-          New here? <button className="cursor-pointer font-semibold text-blue underline-offset-4 hover:underline" onClick={openDemos}>Load a held-out test example</button> to see a complete analysis.
-        </p>
-      )}
       {savedId && (
         <p className="text-center text-sm text-ink-3">
           <Link href="/insights/" className="font-semibold text-blue underline-offset-4 hover:underline">
@@ -635,23 +408,7 @@ function Analyze() {
   );
 }
 
-function Step({
-  n,
-  title,
-  active,
-  done,
-  summary,
-  onOpen,
-  children,
-}: {
-  n: number;
-  title: string;
-  active: boolean;
-  done: boolean;
-  summary: string;
-  onOpen: () => void;
-  children: ReactNode;
-}) {
+function Step({ n, title, active, done, summary, onOpen, children }: { n: number; title: string; active: boolean; done: boolean; summary: string; onOpen: () => void; children: ReactNode }) {
   return (
     <li className="relative sm:pl-16">
       <span
@@ -663,12 +420,7 @@ function Step({
         {done ? <IconCheck size={20} /> : n}
       </span>
       <div className={`surface overflow-hidden transition-shadow ${active ? "shadow-[var(--shadow-lift)]" : ""}`}>
-        <button
-          type="button"
-          onClick={onOpen}
-          aria-expanded={active}
-          className="tap flex w-full cursor-pointer items-center justify-between gap-4 px-5 py-4 text-left sm:px-7 sm:py-5"
-        >
+        <button type="button" onClick={onOpen} aria-expanded={active} className="tap flex w-full cursor-pointer items-center justify-between gap-4 px-5 py-4 text-left sm:px-7 sm:py-5">
           <span className="min-w-0">
             <span className="text-xs font-semibold text-ink-3 sm:hidden">Step {n} · </span>
             <span className="text-lg font-bold text-ink">{title}</span>
@@ -678,12 +430,7 @@ function Step({
         </button>
         <AnimatePresence initial={false}>
           {active && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: EASE }}
-            >
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: EASE }}>
               <div className="px-5 pb-6 sm:px-7 sm:pb-7">{children}</div>
             </motion.div>
           )}
@@ -703,29 +450,17 @@ function StepNext({ disabled, onClick }: { disabled: boolean; onClick: () => voi
   );
 }
 
-function RunStages({ stage }: { stage: number }) {
-  const stages = ["Loading the trained model", "Walking 200 decision trees", "Calibrating against validation surprises"];
+function RunStages({ stage, n, month }: { stage: number; n: number; month: string }) {
+  const stages = [`Learning your normal from ${n} bills`, `Predicting ${month}`, "Checking against your usual variation"];
   return (
-    <motion.ol
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      exit={{ opacity: 0, height: 0 }}
-      className="w-full max-w-md space-y-2 overflow-hidden"
-      aria-live="polite"
-    >
+    <motion.ol initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="w-full max-w-md space-y-2 overflow-hidden" aria-live="polite">
       {stages.map((s, i) => {
         const done = stage > i;
         const current = stage === i;
         return (
           <li key={s} className="flex items-center gap-3 text-sm">
-            <span
-              className={`grid size-6 place-items-center rounded-full transition-colors ${done ? "bg-sage text-white" : current ? "bg-blue-soft" : "bg-sunken"}`}
-            >
-              {done ? (
-                <IconCheck size={13} />
-              ) : current ? (
-                <motion.span className="size-2 rounded-full bg-blue" animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} />
-              ) : null}
+            <span className={`grid size-6 place-items-center rounded-full transition-colors ${done ? "bg-sage text-white" : current ? "bg-blue-soft" : "bg-sunken"}`}>
+              {done ? <IconCheck size={13} /> : current ? <motion.span className="size-2 rounded-full bg-blue" animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} /> : null}
             </span>
             <span className={done || current ? "font-medium text-ink" : "text-ink-3"}>{s}</span>
           </li>

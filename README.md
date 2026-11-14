@@ -105,28 +105,25 @@ The first 24 hours of any input are used as history only and get no prediction.
 
 ## The WATTWISE app
 
-A working application: set up a building and tariff, enter a 10-minute reading, run the **real trained model in your browser**, and get the expected use, potential excess energy, estimated cost and things worth checking. Analyses are saved locally, so history, savings and checks survive a refresh. No server, no database, no AI API.
+A landing page with a scroll-animated fridge leads into a working app: set up your building and tariff, enter the kWh from your monthly bill plus at least three earlier bills, and WATTWISE learns your normal from your own history, predicts this month, and shows how much looks unusually high, what it may cost, why, and what to check. Everything is saved locally, so history, savings and checks survive a refresh. No server, no database, no AI API.
 
 ```bash
 cd website
 npm install
 npm run dev            # http://localhost:3000
-npm run test:golden    # browser inference vs Python, 20 golden cases
+npm run test:bills     # self-check of the bill model
+npm run test:golden    # research model: browser vs Python, 20 golden cases
 npm run build          # static app in website/out/
 npx serve out          # preview the production build
 ```
 
-**Flow:** onboarding (building type, currency, tariff) → Analyze (when → reading → recent context → run) → result (actual vs expected, potential excess, cost, anomaly percentile, energy-flow infographic, suggested checks) → save → Overview, History, Insights (savings and patterns from saved analyses only), Learn (research, real failures, in-browser model verification), Settings.
+**Bill model** (`src/lib/ml/bills.ts`). Works in kWh per day, so bills covering different numbers of days compare fairly. With fewer than 6 past months the expectation is your average daily use; from 6 months on it fits a least-squares trend. Typical variation is the fit's residual standard deviation. A bill is flagged as unusually high when it is at least 2 standard deviations above expected (about the top 2.5%). Potential excess = actual − expected for flagged bills; cost = excess kWh × your tariff.
 
-**In-browser inference.** `ml/export_web.py` exports every tree of the selected Gradient Boosting model, plus its feature order and anomaly calibration, to `website/src/data/wattwise-model.json`. `src/lib/ml/gbm.ts` walks those trees exactly as scikit-learn does (float32 inputs, float64 thresholds, same summation order). The 20 golden cases in `golden.json` match Python to 0.0 Wh.
+**Why bills and not the research model?** The research model was trained on 10-minute readings. Fed a monthly average, its expectation is badly skewed (for example 188 kWh expected for a 100 kWh month), so it can't honestly judge bills. It stays on the Learn page as the research evidence, with in-browser verification against Python.
 
-**Model inputs.** The model needs the previous reading, the average of the last hour and the average of the last 6 hours. The app derives them from your saved readings when all 36 preceding intervals are available. Otherwise you paste the 36 readings or enter the three values. Missing readings are never filled in.
+**Example bills.** "Try with example bills" loads real monthly totals for one home from the research dataset (Jan–May 2016; January and May are partial months, normalised by days).
 
-**Demo data.** "Try with demo data" loads real held-out test readings, with their real 6-hour history, and runs them through the same browser code.
-
-**Storage.** One versioned localStorage document, `wattwise:v1`, holds the profile, tariff, preferences, onboarding state, analyses, completed checks and readings (`src/lib/storage.ts`).
-
-Research figures on the Learn page come from `results/` via `scripts/build-data.mjs`, which runs automatically before `dev` and `build`.
+**Storage.** One versioned localStorage document, `wattwise:v2`, holds the profile, tariff, preferences, onboarding state, bill analyses, completed checks and remembered bills (`src/lib/storage.ts`). Setup from the older `wattwise:v1` format is migrated automatically.
 
 ## Rules followed
 

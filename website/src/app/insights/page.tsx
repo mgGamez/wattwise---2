@@ -5,10 +5,10 @@ import { BarChart, LineChart } from "@/components/charts";
 import { CATEGORY_ICON, IconArrowRight, IconFlask } from "@/components/icons";
 import { AnimatedNumber, EASE, SPRING, useReduceMotion } from "@/components/motion";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
-import { allTimeTotal, byHour, byReadingTime, checksProgress, periodTotals, statusOf } from "@/lib/insights";
+import { allTimeTotal, byMonth, checksProgress, periodTotals, statusOf } from "@/lib/insights";
+import { monthName, monthShort } from "@/lib/explain";
 import { costOf, fmtKwh, fmtMoney, fmtNum } from "@/lib/money";
 import { useAppState } from "@/lib/storage";
-import { fmtClock, fmtDay } from "@/lib/time";
 
 export default function InsightsPage() {
   const state = useAppState()!;
@@ -20,14 +20,14 @@ export default function InsightsPage() {
       <div className="space-y-8">
         <PageHeader eyebrow="Insights" title="Savings & patterns" />
         <EmptyState
-          title="Keep analyzing readings to build your savings picture."
-          body="Savings, trends and time-of-day patterns are calculated only from analyses you save. Nothing is estimated for days you haven’t analyzed."
+          title="Keep analyzing bills to build your savings picture."
+          body="Savings and trends are calculated only from the bills you analyze and save. Nothing is estimated for months you haven’t analyzed."
         >
           <ButtonLink href="/analyze/">
-            Analyze a reading <IconArrowRight size={18} />
+            Analyze a bill <IconArrowRight size={18} />
           </ButtonLink>
-          <ButtonLink href="/analyze/?demo=pick" variant="secondary">
-            <IconFlask size={18} className="text-blue" /> Try with demo data
+          <ButtonLink href="/analyze/?demo=1" variant="secondary">
+            <IconFlask size={18} className="text-blue" /> Try with example bills
           </ButtonLink>
         </EmptyState>
         <ReduceInfographic />
@@ -38,16 +38,15 @@ export default function InsightsPage() {
   const total = allTimeTotal(analyses);
   const periods = periodTotals(analyses);
   const progress = checksProgress(analyses, state.actions);
-  const sorted = [...analyses].sort(byReadingTime);
-  const labels = sorted.map((a) => `${fmtDay(a.timestamp)} ${a.timestamp.slice(0, 4)} · ${fmtClock(a.timestamp)}`);
+  const sorted = [...analyses].sort(byMonth);
+  const labels = sorted.map((a) => monthName(a.month));
   const tariff = state.tariff;
-  const money = (wh: number) => (tariff ? fmtMoney(costOf(wh, tariff)!, tariff.currency) : "—");
+  const money = (kwh: number) => (tariff ? fmtMoney(costOf(kwh * 1000, tariff)!, tariff.currency) : "—");
   let running = 0;
   const cumulativeCost = sorted.map((a) => {
-    running += costOf(a.result.potentialExcessWh, tariff) ?? 0;
+    running += costOf(a.result.potentialExcessKwh * 1000, tariff) ?? 0;
     return running;
   });
-  const hours = byHour(analyses);
 
   return (
     <div className="space-y-6">
@@ -71,16 +70,16 @@ export default function InsightsPage() {
               Potential excess identified
             </p>
             <p className="num mt-3 text-5xl font-bold leading-none text-amber">
-              <AnimatedNumber value={total.excessWh} format={fmtKwh} />
+              <AnimatedNumber value={total.excessKwh * 1000} format={fmtKwh} />
             </p>
             <p className="mt-2 text-sm text-ink-2">
-              {total.flagged} unusual of {total.count} saved reading{total.count === 1 ? "" : "s"}
+              {total.flagged} unusual of {total.count} saved bill{total.count === 1 ? "" : "s"}
             </p>
           </div>
           <div>
             <p className="label-caps">Estimated potential cost</p>
             <p className="num mt-3 text-5xl font-bold leading-none text-ink">
-              {tariff ? <AnimatedNumber value={costOf(total.excessWh, tariff)!} format={(v) => fmtMoney(v, tariff.currency)} /> : "—"}
+              {tariff ? <AnimatedNumber value={costOf(total.excessKwh * 1000, tariff)!} format={(v) => fmtMoney(v, tariff.currency)} /> : "—"}
             </p>
             <p className="mt-2 text-sm text-ink-2">{tariff ? `at ${fmtMoney(tariff.perKwh, tariff.currency)} per kWh` : "Set a tariff in Settings."}</p>
           </div>
@@ -97,9 +96,9 @@ export default function InsightsPage() {
                   className="rounded-2xl bg-sunken px-5 py-4"
                 >
                   <p className="text-sm font-semibold text-ink-2">{p.label}</p>
-                  <p className="num mt-1 text-2xl font-bold text-ink">{fmtKwh(p.excessWh)}</p>
+                  <p className="num mt-1 text-2xl font-bold text-ink">{fmtKwh(p.excessKwh * 1000)}</p>
                   <p className="num text-sm text-ink-2">
-                    {money(p.excessWh)} · {p.count} reading{p.count === 1 ? "" : "s"}
+                    {money(p.excessKwh)} · {p.count} bill{p.count === 1 ? "" : "s"}
                   </p>
                 </motion.li>
               ))}
@@ -141,28 +140,28 @@ export default function InsightsPage() {
 
       {/* Trends */}
       {sorted.length < 2 ? (
-        <p className="surface px-6 py-8 text-center text-ink-2">Analyze at least two readings to see trends.</p>
+        <p className="surface px-6 py-8 text-center text-ink-2">Analyze at least two bills to see trends.</p>
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
-          <ChartCard title="Actual vs expected" note="Each point is one saved reading, in reading-time order. Amber = unusual." wide>
+          <ChartCard title="Actual vs expected" note="kWh per day for each saved bill, in month order. Amber = unusually high." wide>
             <LineChart
               labels={labels}
               series={[
-                { key: "a", label: "Actual", color: "var(--color-ink)", values: sorted.map((a) => a.actualWh) },
-                { key: "e", label: "AI expected", color: "var(--color-blue)", dashed: true, values: sorted.map((a) => a.result.expectedWh) },
+                { key: "a", label: "Actual", color: "var(--color-ink)", values: sorted.map((a) => a.result.actualPerDay) },
+                { key: "e", label: "AI expected", color: "var(--color-blue)", dashed: true, values: sorted.map((a) => a.result.expectedPerDay) },
               ]}
               markers={sorted.map((a) => a.result.flagged)}
-              format={(v) => `${fmtNum(v)} Wh`}
-              ariaLabel={`Actual versus expected for ${sorted.length} saved readings`}
+              format={(v) => `${fmtNum(v, 1)} kWh/day`}
+              ariaLabel={`Actual versus expected daily use for ${sorted.length} saved bills`}
             />
           </ChartCard>
-          <ChartCard title="Potential excess per reading">
+          <ChartCard title="Potential excess per bill">
             <BarChart
               labels={labels}
-              values={sorted.map((a) => a.result.potentialExcessWh)}
+              values={sorted.map((a) => a.result.potentialExcessKwh)}
               colors={sorted.map((a) => (a.result.flagged ? "var(--color-amber-bright)" : "var(--color-sage-bright)"))}
-              format={(v) => `${fmtNum(v)} Wh potential excess`}
-              ariaLabel="Potential excess for each saved reading"
+              format={(v) => `${fmtNum(v, 1)} kWh potential excess`}
+              ariaLabel="Potential excess for each saved bill"
             />
           </ChartCard>
           {tariff && (
@@ -177,15 +176,12 @@ export default function InsightsPage() {
               />
             </ChartCard>
           )}
-          <ChartCard title="Unusual readings by time of day" note="Bars show analyzed readings per hour; amber part = unusual.">
-            <HourBars hours={hours} />
-          </ChartCard>
-          <ChartCard title="Recent pattern" note="Your last readings in order. Look for clusters of amber.">
-            <ol className="flex flex-wrap gap-1.5" aria-label="Recent readings, oldest first">
+          <ChartCard title="Recent pattern" note="Your saved bills in month order. Look for clusters of amber.">
+            <ol className="flex flex-wrap gap-1.5" aria-label="Saved bills, oldest first">
               {sorted.slice(-30).map((a) => (
                 <li
                   key={a.id}
-                  title={labels[sorted.indexOf(a)]}
+                  title={monthShort(a.month)}
                   className={`size-5 rounded-md ${statusOf(a) === "unusual" ? "bg-amber-bright" : statusOf(a) === "below" ? "bg-blue-bright" : "bg-sage-bright"}`}
                   aria-label={`${labels[sorted.indexOf(a)]}: ${a.result.flagged ? "unusual" : "normal"}`}
                 />
@@ -207,37 +203,6 @@ function ChartCard({ title, note, wide, children }: { title: string; note?: stri
       {note && <p className="mt-0.5 text-sm text-ink-3">{note}</p>}
       <div className="mt-5">{children}</div>
     </section>
-  );
-}
-
-function HourBars({ hours }: { hours: ReturnType<typeof byHour> }) {
-  const reduce = useReduceMotion();
-  const max = Math.max(1, ...hours.map((h) => h.total));
-  return (
-    <div>
-      <div className="flex h-36 items-end gap-[3px]" role="img" aria-label={hours.filter((h) => h.total).map((h) => `${h.hour}:00 ${h.flagged} of ${h.total} unusual`).join(", ")}>
-        {hours.map((h, i) => (
-          <div key={h.hour} className="flex h-full flex-1 flex-col justify-end" title={`${String(h.hour).padStart(2, "0")}:00 · ${h.flagged}/${h.total} unusual`}>
-            <motion.div
-              className="flex w-full origin-bottom flex-col justify-end overflow-hidden rounded-t-md bg-sage-soft"
-              style={{ height: h.total ? `${(h.total / max) * 100}%` : "2px" }}
-              initial={reduce ? false : { scaleY: 0 }}
-              animate={{ scaleY: 1 }}
-              transition={{ duration: 0.5, ease: EASE, delay: i * 0.015 }}
-            >
-              <div className="w-full bg-amber-bright" style={{ height: h.total ? `${(h.flagged / h.total) * 100}%` : 0 }} />
-            </motion.div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-1.5 flex justify-between text-[11px] text-ink-3">
-        <span>00:00</span>
-        <span>06:00</span>
-        <span>12:00</span>
-        <span>18:00</span>
-        <span>23:00</span>
-      </div>
-    </div>
   );
 }
 

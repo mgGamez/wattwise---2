@@ -2,10 +2,9 @@
 
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { IconArrowRight, IconBolt, IconCheck, IconClock, IconFlask, IconHistory, IconInsights, IconShield, IconSpark } from "@/components/icons";
+import { IconBolt, IconCheck, IconClock, IconFlask, IconHistory, IconInsights, IconShield, IconSpark } from "@/components/icons";
 import { EASE, SPRING, useReduceMotion } from "@/components/motion";
-import { Button, ButtonLink, PageHeader } from "@/components/ui";
-import demos from "@/data/demo-samples.json";
+import { Button, PageHeader } from "@/components/ui";
 import { site } from "@/lib/data";
 import { analyse, inputsFromHistory } from "@/lib/ml/gbm";
 import { loadGolden, loadModel } from "@/lib/ml/load";
@@ -13,10 +12,6 @@ import { fmtNum } from "@/lib/money";
 import { fmtWhen } from "@/lib/time";
 
 const toLocal = (t: string) => t.replace(" ", "T").slice(0, 16);
-const demoIdFor = (t: string) => {
-  const id = `demo-${toLocal(t).replace(/[-:]/g, "").replace("T", "-")}`;
-  return (demos as { id: string }[]).some((d) => d.id === id) ? id : null;
-};
 
 export default function LearnPage() {
   const reduce = useReduceMotion();
@@ -28,7 +23,7 @@ export default function LearnPage() {
       <PageHeader
         eyebrow="Learn"
         title="How WATTWISE thinks"
-        sub="The research behind every result: what the model learned, how well it works, and where it gets things wrong."
+        sub="The research behind WATTWISE: a model trained on real 10-minute readings that learns normal use and flags what doesn’t fit. The app applies the same idea to your monthly bills, learning your normal from your own history."
       />
 
       {/* ---------------- Context vs threshold */}
@@ -43,7 +38,6 @@ export default function LearnPage() {
               { p: ctx.highButNormal, letter: "A", verdict: "Higher use, but expected for that moment", flagged: false },
               { p: ctx.lowButUnusual, letter: "B", verdict: "Lower use, but unusually high for that moment", flagged: true },
             ].map(({ p, letter, verdict, flagged }, i) => {
-              const demoId = demoIdFor(p.t);
               const max = Math.max(ctx.highButNormal!.actual, ctx.lowButUnusual!.actual, p.expected);
               return (
                 <motion.div
@@ -89,11 +83,6 @@ export default function LearnPage() {
                   </div>
                   <p className={`mt-4 font-semibold ${flagged ? "text-amber" : "text-ink"}`}>{verdict}</p>
                   <p className="mt-1 text-xs text-ink-3">{fmtWhen(toLocal(p.t))}</p>
-                  {demoId && (
-                    <ButtonLink href={`/analyze/?demo=${demoId}`} variant="secondary" size="sm" className="mt-4">
-                      Run it through the model <IconArrowRight size={15} />
-                    </ButtonLink>
-                  )}
                 </motion.div>
               );
             })}

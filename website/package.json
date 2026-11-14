@@ -11,7 +11,8 @@
     "start": "npx serve out",
     "typecheck": "tsc --noEmit",
     "test:golden": "node scripts/test-golden.mts",
-    "postbuild": "node scripts/fix-export-segments.mjs"
+    "postbuild": "node scripts/fix-export-segments.mjs",
+    "test:bills": "node scripts/test-bills.mts"
   },
   "dependencies": {
     "framer-motion": "14.14.0",

@@ -1,95 +1,57 @@
-// Investigation suggestions. Deterministic rules based ONLY on what WATTWISE knows:
-// the reading time, the building type, the size of the unexpected gap and the
-// user's own saved history. WATTWISE does not know which device was running, so
-// these are things worth checking — never a diagnosis.
+// Investigation suggestions for an unusually high bill. Deterministic rules based
+// only on what WATTWISE knows: the building type, how far above normal the bill is,
+// and the user's own bill history. It can't see devices, so these are checks, not diagnoses.
 
 import type { ActionItem, Analysis, BuildingType } from "./storage";
-import { fmtClock, hourOf, weekdayOf } from "./time";
 
-const LIB: Record<string, Omit<ActionItem, "detail"> & { base: string }> = {
-  overnight: {
-    id: "overnight",
-    category: "standby",
-    title: "Look for devices left running overnight",
-    base: "Heaters, chargers, pumps or appliances left on after everyone has gone to sleep.",
-  },
-  standby: {
-    id: "standby",
-    category: "standby",
-    title: "Check standby electronics",
-    base: "TVs, consoles, routers, printers and chargers can draw power while “off”. Smart plugs or a power strip make them easy to switch off.",
-  },
-  lighting: {
-    id: "lighting",
-    category: "lighting",
-    title: "Check lighting outside occupied hours",
-    base: "Lights or signage on timers, or rooms left lit when nobody is there.",
-  },
-  hvac: {
-    id: "hvac",
-    category: "cooling-heating",
-    title: "Check cooling/heating schedules",
-    base: "Thermostat schedules, set-points and units running in empty rooms are common sources of extra use.",
-  },
-  highload: {
-    id: "highload",
-    category: "high-load",
-    title: "Review high-load equipment",
-    base: "Ovens, kettles, washers, dryers, water heaters, pumps or machinery that draw a lot of power at once.",
-  },
-  recurring: {
-    id: "recurring",
-    category: "timing",
-    title: "Investigate recurring anomaly times",
-    base: "Unusual readings that repeat at the same time of day often point to a schedule or timer.",
-  },
-};
+const item = (id: string, category: ActionItem["category"], title: string, detail: string): ActionItem => ({ id, category, title, detail });
 
-function item(key: keyof typeof LIB, why: string): ActionItem {
-  const { base, ...rest } = LIB[key];
-  return { ...rest, detail: `${base} ${why}` };
-}
-
-/**
- * Up to three suggestions for an unusual reading. Normal or below-expected
- * readings get none: there is no unexpected use to investigate.
- */
+/** Up to three suggestions for an unusual bill; normal or lower bills get none. */
 export function suggestActions(
-  a: Pick<Analysis, "timestamp" | "result">,
+  a: Pick<Analysis, "month" | "result">,
   buildingType: BuildingType | null,
   history: Analysis[],
 ): ActionItem[] {
   if (!a.result.flagged) return [];
-  const h = hourOf(a.timestamp);
-  const wd = weekdayOf(a.timestamp);
-  const weekend = wd === 0 || wd === 6;
-  const night = h >= 22 || h < 6;
   const workplace = buildingType === "office" || buildingType === "small-business";
-  const outsideWorkHours = workplace && (weekend || h < 8 || h >= 19);
-  const big = a.result.residualWh >= 2 * a.result.thresholdWh;
-  const at = fmtClock(a.timestamp);
-
-  const sameTime = history.filter(
-    (x) => x.result.flagged && x.timestamp !== a.timestamp && Math.min(Math.abs(hourOf(x.timestamp) - h), 24 - Math.abs(hourOf(x.timestamp) - h)) <= 1,
-  ).length;
+  const pct = a.result.expectedKwh > 0 ? Math.round((a.result.residualKwh / a.result.expectedKwh) * 100) : null;
+  const earlierHigh = history.filter((x) => x.result.flagged && x.month < a.month).length;
 
   const out: ActionItem[] = [];
-  const add = (x: ActionItem) => {
-    if (out.length < 3 && !out.some((o) => o.id === x.id)) out.push(x);
-  };
-
-  if (sameTime >= 1)
-    add(item("recurring", `Suggested because this is unusual reading number ${sameTime + 1} around ${String(h).padStart(2, "0")}:00 in your history.`));
-  if (night) add(item("overnight", `Suggested because the reading was at ${at}, a time most buildings are quiet.`));
-  if (outsideWorkHours)
-    add(item("lighting", `Suggested because the reading was ${weekend ? "on a weekend" : `at ${at}`}, outside typical working hours.`));
-  if (big)
-    add(item("highload", "Suggested because use was more than twice the detection threshold above what was expected."));
-  if (!night && !outsideWorkHours) add(item("hvac", `Suggested because the reading was at ${at}, when heating or cooling is often scheduled.`));
-  if (night) add(item("standby", "Suggested because night-time use often includes devices on standby."));
-  // fill to three with general, still-relevant checks
-  add(item("highload", "A general check for any unexpected high reading."));
-  add(item("hvac", "A general check for any unexpected high reading."));
-  add(item("standby", "A general check for any unexpected high reading."));
-  return out;
+  if (earlierHigh >= 1)
+    out.push(
+      item(
+        "recurring",
+        "timing",
+        "Look for what repeats in your high months",
+        `This is unusual month number ${earlierHigh + 1} in your history. Compare the high months: the same season, guests, a new appliance or a schedule change often explains a pattern.`,
+      ),
+    );
+  out.push(
+    item(
+      "hvac",
+      "cooling-heating",
+      "Check heating and cooling",
+      `Air conditioners, heaters and water heaters are the most common reason a monthly bill rises${pct !== null ? ` (this bill is ${pct}% above your normal)` : ""}. Check thermostat settings, timers, and units left running in empty rooms.`,
+    ),
+  );
+  out.push(
+    item(
+      "highload",
+      "high-load",
+      "Review high-load appliances",
+      "Anything new or used more this month: ovens, kettles, washers, dryers, geysers, pumps, heaters or machinery.",
+    ),
+  );
+  if (workplace)
+    out.push(item("lighting", "lighting", "Check lighting outside working hours", "Lights, signage or equipment left on overnight or at weekends add up over a month."));
+  out.push(
+    item(
+      "standby",
+      "standby",
+      "Check devices left on standby",
+      "TVs, consoles, routers, chargers and printers draw power all month while “off”. A power strip or smart plug makes them easy to switch off.",
+    ),
+  );
+  return out.slice(0, 3);
 }

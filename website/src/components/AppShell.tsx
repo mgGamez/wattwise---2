@@ -9,7 +9,7 @@ import { IconBolt, IconHistory, IconInsights, IconLearn, IconOverview, IconSetti
 import { EASE } from "./motion";
 
 const NAV = [
-  { href: "/", label: "Overview", Icon: IconOverview },
+  { href: "/overview", label: "Overview", Icon: IconOverview },
   { href: "/analyze", label: "Analyze", Icon: IconBolt },
   { href: "/history", label: "History", Icon: IconHistory },
   { href: "/insights", label: "Insights", Icon: IconInsights },
@@ -19,7 +19,6 @@ const NAV = [
 const norm = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
 
 function isActive(path: string, href: string) {
-  if (href === "/") return path === "/";
   if (href === "/history") return path === "/history" || path === "/analysis";
   return path === href;
 }
@@ -53,12 +52,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = norm(usePathname() || "/");
   const router = useRouter();
   const onWelcome = path === "/welcome";
-  const needsOnboarding = state !== null && !state.onboarding.completed && !onWelcome;
+  const onLanding = path === "/"; // the public landing page has no app chrome and no onboarding gate
+  const needsOnboarding = state !== null && !state.onboarding.completed && !onWelcome && !onLanding;
 
   useEffect(() => {
     if (needsOnboarding) router.replace("/welcome/");
   }, [needsOnboarding, router]);
 
+  if (onLanding) return <>{children}</>;
   if (state === null || needsOnboarding) return <Splash />;
   if (onWelcome) return <>{children}</>;
 
@@ -75,7 +76,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface/70 px-5 py-7 backdrop-blur-xl lg:flex">
-        <Link href="/" aria-label="WATTWISE overview">
+        <Link href="/overview/" aria-label="WATTWISE overview">
           <Logo />
         </Link>
         <nav aria-label="Main" className="mt-10">
@@ -125,7 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/85 px-4 backdrop-blur-xl lg:hidden">
-        <Link href="/" aria-label="WATTWISE overview">
+        <Link href="/overview/" aria-label="WATTWISE overview">
           <Logo />
         </Link>
         <Link

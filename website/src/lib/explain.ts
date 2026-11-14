@@ -1,103 +1,65 @@
-// Plain-language explanation of a result. Everything under "facts" is computed
-// from the reading, the model inputs and the model's own per-input contributions.
-// "Possible explanations" are clearly framed as things to consider: WATTWISE
-// cannot see devices or people, so it never states a cause.
+// Plain-language explanation of a bill result. "Facts" are computed from the bills
+// and the fitted model; "possible explanations" are clearly framed as things to
+// consider, because WATTWISE can't see devices or people.
 
-import type { ModelInputs } from "./ml/gbm";
-import { fmtEnergy } from "./units";
+import type { Analysis } from "./storage";
 
-export const INPUT_INFO: Record<keyof ModelInputs, { label: string; intervals: number; period: string }> = {
-  previous_interval: { label: "Previous 10 minutes", intervals: 1, period: "previous 10 minutes" },
-  rolling_1h_mean: { label: "Last hour", intervals: 6, period: "last hour" },
-  rolling_6h_mean: { label: "Last 6 hours", intervals: 36, period: "last 6 hours" },
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export const monthName = (m: string) => {
+  const [y, mo] = m.split("-").map(Number);
+  return `${MONTHS[mo - 1]} ${y}`;
+};
+export const monthShort = (m: string) => {
+  const [y, mo] = m.split("-").map(Number);
+  return `${MONTHS[mo - 1].slice(0, 3)} ${String(y).slice(2)}`;
 };
 
-/** "500 Wh total (83.3 Wh per 10 min)" — inputs shown the way people think about them. */
-export function describeInput(key: keyof ModelInputs, avgPerInterval: number) {
-  const info = INPUT_INFO[key];
-  if (info.intervals === 1) return `${fmtEnergy(avgPerInterval)}`;
-  return `${fmtEnergy(avgPerInterval * info.intervals)} total · ${fmtEnergy(avgPerInterval)} per 10 min`;
-}
+// always kWh here so every number in an explanation shares one unit
+const kwh = (v: number) => `${v.toLocaleString("en", { maximumFractionDigits: Math.abs(v) < 10 ? 2 : 1 })} kWh`;
 
-type Input = {
-  actualWh: number;
-  inputs: ModelInputs;
-  result: { expectedWh: number; residualWh: number; flagged: boolean; thresholdWh: number; outOfRange: string[] };
-  explanation?: { base: number; contributions: Record<string, number> };
-  /** reading is in the bottom 5% of validation residuals */
-  low?: boolean;
-};
-
-function ratioPhrase(actual: number, ref: number, what: string) {
-  if (ref <= 0) return null;
-  const r = actual / ref;
-  if (r >= 1.5) return `${r.toFixed(1)}× the ${what} average (${fmtEnergy(ref)} per 10 min)`;
-  if (r <= 0.67) return `${Math.round((1 - r) * 100)}% below the ${what} average (${fmtEnergy(ref)} per 10 min)`;
-  return `close to the ${what} average (${fmtEnergy(ref)} per 10 min)`;
-}
-
-export function explainResult(a: Input) {
-  const { actualWh, inputs, result: r } = a;
+export function explainBill(a: Pick<Analysis, "current" | "history" | "result">) {
+  const r = a.result;
+  const f = r.fit;
   const facts: string[] = [];
-  const diff = Math.abs(r.residualWh);
+  const diff = Math.abs(r.residualKwh);
+  const pct = r.expectedKwh > 0 ? Math.round((diff / r.expectedKwh) * 100) : null;
 
-  // 1. the verdict, in numbers
+  facts.push(
+    f.method === "trend"
+      ? `Your ${f.n} past months show a trend of ${f.slope >= 0 ? "+" : "−"}${kwh(Math.abs(f.slope))} per day each month, which points to about ${kwh(r.expectedPerDay)} per day now.`
+      : `Your ${f.n} past months averaged ${kwh(f.meanPerDay)} per day.`,
+  );
+  facts.push(
+    `This bill works out to ${kwh(r.actualPerDay)} per day over ${a.current.days % 1 ? a.current.days.toFixed(1) : a.current.days} days, against an expected ${kwh(r.expectedPerDay)} per day.`,
+  );
+  facts.push(`Your bills usually vary by about ±${kwh(f.sigma)} per day from month to month.`);
   if (r.flagged)
     facts.push(
-      `This reading used ${fmtEnergy(diff)} more than expected. That is above the flag line of ${fmtEnergy(r.thresholdWh)}, which only the top 5% of surprises in the validation data reached.`,
+      `This month is ${r.z.toFixed(1)}× that usual variation above normal (${kwh(diff)}${pct !== null ? `, ${pct}%` : ""} more). Bills this far above normal are rare, so WATTWISE flags it.`,
     );
-  else if (r.residualWh >= 0)
-    facts.push(`This reading used ${fmtEnergy(diff)} more than expected, which is below the ${fmtEnergy(r.thresholdWh)} flag line, so it counts as normal variation.`);
-  else if (a.low) facts.push(`This reading used ${fmtEnergy(diff)} less than expected, lower than 95% of intervals in the validation data.`);
-  else facts.push(`This reading used ${fmtEnergy(diff)} less than expected, which is normal variation.`);
-
-  // 2. how the reading compares with the recent context the model used
-  const prev = inputs.previous_interval;
-  if (prev > 0) {
-    const ratio = actualWh / prev;
-    if (ratio >= 1.5) facts.push(`Use jumped from ${fmtEnergy(prev)} in the previous 10 minutes to ${fmtEnergy(actualWh)} (${ratio.toFixed(1)}×).`);
-    else if (ratio <= 0.67) facts.push(`Use dropped from ${fmtEnergy(prev)} in the previous 10 minutes to ${fmtEnergy(actualWh)} (${Math.round((1 - ratio) * 100)}% lower).`);
-    else facts.push(`Use was similar to the previous 10 minutes (${fmtEnergy(prev)}).`);
-  }
-  const h1 = ratioPhrase(actualWh, inputs.rolling_1h_mean, "last-hour");
-  const h6 = ratioPhrase(actualWh, inputs.rolling_6h_mean, "6-hour");
-  if (h1 && h6) facts.push(`It was ${h1}, and ${h6}.`);
-
-  // 3. what drove the expectation (from the model's own path contributions)
-  let driver: string | null = null;
-  if (a.explanation) {
-    const entries = Object.entries(a.explanation.contributions) as [keyof ModelInputs, number][];
-    const [key, value] = entries.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
-    driver = `The expectation of ${fmtEnergy(r.expectedWh)} was driven mostly by the ${INPUT_INFO[key].period} (${value >= 0 ? "+" : "−"}${fmtEnergy(
-      Math.abs(value),
-    )} compared with a typical interval).`;
-    facts.push(driver);
-  }
-
-  // 4. reliability
-  if (r.outOfRange.length)
+  else if (r.low) facts.push(`This month is ${Math.abs(r.z).toFixed(1)}× the usual variation below normal (${kwh(diff)} less).`);
+  else
     facts.push(
-      `Some recent-context values are outside what the model saw in training (${r.outOfRange
-        .map((f) => INPUT_INFO[f as keyof ModelInputs]?.period ?? f)
-        .join(", ")}), so treat this expectation with caution. Check that hour and 6-hour values are totals for those periods.`,
+      `The difference (${r.residualKwh >= 0 ? "+" : "−"}${kwh(diff)}) is within your usual month-to-month variation, so it’s normal.`,
     );
+  const highest = [...a.history].sort((x, y) => y.kwh / y.days - x.kwh / x.days)[0];
+  if (highest && r.actualPerDay > highest.kwh / highest.days)
+    facts.push(`It’s your highest daily use so far (previous highest: ${kwh(highest.kwh / highest.days)} per day, ${monthName(highest.month)}).`);
 
-  const possible =
-    r.residualWh >= 0
-      ? r.flagged
-        ? [
-            "A high-power appliance switched on (for example an oven, heater, kettle, washer or dryer).",
-            "More people or activity than usual for this time.",
-            "Equipment left running or running longer than usual.",
-          ]
-        : ["Normal ups and downs in use. Nothing here stands out from typical variation."]
-      : !a.low
-        ? ["Normal ups and downs in use. Nothing here stands out from typical variation."]
-        : [
-          "A high-use period (cooking, laundry, heating) had just ended.",
-          "Appliances were switched off, or fewer people were around.",
-          "The recent context may overstate typical use. Hour and 6-hour values should be totals for those periods.",
-        ];
+  const possible = r.flagged
+    ? [
+        "More heating or cooling than usual (a hot or cold month).",
+        "More people or more time spent at home or at work.",
+        "A new appliance, or one that’s faulty or left running.",
+        "A longer billing period or an estimated meter reading. Check the dates and reading type on the bill.",
+      ]
+    : r.low
+      ? [
+          "Milder weather, so less heating or cooling.",
+          "Time away, or fewer people using the building.",
+          "A shorter billing period or an estimated reading. Check the bill dates.",
+        ]
+      : ["Normal month-to-month ups and downs. Nothing here stands out from your usual pattern."];
 
   return { facts, possible };
 }

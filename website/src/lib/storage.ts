@@ -5,17 +5,14 @@
 // and change it only through the mutators below.
 
 import { useSyncExternalStore } from "react";
-import type { ModelInputs } from "./ml/gbm";
+import type { Bill, BillFit } from "./ml/bills";
 
-export const STORAGE_KEY = "wattwise:v1";
-export const SCHEMA_VERSION = 1;
-const MAX_READINGS = 6000; // cap on remembered 10-minute readings (~41 days)
+export const STORAGE_KEY = "wattwise:v2";
+const LEGACY_KEY = "wattwise:v1"; // 10-minute-reading era; profile/tariff/onboarding are migrated
+export const SCHEMA_VERSION = 2 as const;
 
 export type BuildingType = "home" | "apartment" | "office" | "small-business" | "other";
 export type CurrencyCode = "INR" | "USD" | "EUR" | "GBP" | "AUD" | "CAD" | "SGD" | "AED";
-/** summary-values = totals for the last hour / 6 hours entered by the user (converted to averages);
- *  estimated-from-usage = averages derived from a monthly/daily total (assumes even use). */
-export type ContextMethod = "saved-history" | "pasted-history" | "summary-values" | "estimated-from-usage";
 
 export type ActionItem = {
   id: string;
@@ -24,32 +21,28 @@ export type ActionItem = {
   detail: string;
 };
 
+/** One analysed bill: the current month judged against the user's earlier months. */
 export type Analysis = {
   id: string;
   createdAt: string; // ISO time the analysis was run
-  timestamp: string; // local reading time "YYYY-MM-DDTHH:mm" (start of the 10-minute interval)
+  month: string; // "YYYY-MM" of the bill analysed
   source: "manual" | "demo";
-  demoId?: string;
-  actualWh: number;
-  contextMethod: ContextMethod;
-  inputs: ModelInputs;
+  current: Bill;
+  history: Bill[];
   result: {
-    expectedWh: number;
-    residualWh: number;
+    expectedKwh: number;
+    expectedPerDay: number;
+    actualPerDay: number;
+    residualKwh: number;
+    z: number;
     percentile: number;
     flagged: boolean;
-    thresholdWh: number;
-    /** residual counted as potential excess only when the reading is flagged as unusual */
-    potentialExcessWh: number;
-    outOfRange: string[];
-    /** % of validation intervals with a residual <= this one (works below expected too) */
-    position?: number | null;
+    low: boolean;
+    /** residual counted as potential excess only when the bill is flagged as unusual */
+    potentialExcessKwh: number;
+    fit: BillFit;
   };
-  /** the model's own per-input contributions: expectedWh = base + Σ contributions */
-  explanation?: { base: number; contributions: Record<string, number> };
-  model: { name: string; format: string; trees: number };
   actions: ActionItem[];
-  pythonReference?: { expectedWh: number; percentile: number };
 };
 
 export type AppState = {
@@ -57,12 +50,12 @@ export type AppState = {
   onboarding: { completed: boolean; completedAt: string | null };
   profile: { buildingType: BuildingType | null };
   tariff: { currency: CurrencyCode; perKwh: number } | null;
-  preferences: { unit: "Wh" | "kWh"; motion: "system" | "reduced" };
+  preferences: { motion: "system" | "reduced" };
   analyses: Analysis[];
   /** analysisId -> actionId -> time it was marked as checked */
   actions: Record<string, Record<string, string>>;
-  /** remembered 10-minute readings (Wh), keyed by local "YYYY-MM-DDTHH:mm" */
-  readings: Record<string, number>;
+  /** remembered bills, keyed by "YYYY-MM" — used to pre-fill history next time */
+  bills: Record<string, { kwh: number; days: number }>;
 };
 
 export function freshState(): AppState {
@@ -71,58 +64,61 @@ export function freshState(): AppState {
     onboarding: { completed: false, completedAt: null },
     profile: { buildingType: null },
     tariff: null,
-    preferences: { unit: "Wh", motion: "system" },
+    preferences: { motion: "system" },
     analyses: [],
     actions: {},
-    readings: {},
+    bills: {},
   };
 }
 
 // ---------------------------------------------------------------- validation
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isMonth = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}$/.test(v);
 
 function isAnalysis(a: unknown): a is Analysis {
-  if (!isObj(a) || !isObj(a.result) || !isObj(a.inputs)) return false;
+  if (!isObj(a) || !isObj(a.result) || !isObj(a.current)) return false;
   return (
     typeof a.id === "string" &&
-    typeof a.timestamp === "string" &&
-    isNum(a.actualWh) &&
-    isNum(a.result.expectedWh) &&
-    isNum(a.result.residualWh) &&
+    isMonth(a.month) &&
+    isNum(a.current.kwh) &&
+    Array.isArray(a.history) &&
+    isNum(a.result.expectedKwh) &&
+    isNum(a.result.residualKwh) &&
     Array.isArray(a.actions)
   );
 }
 
 /** Parse + sanitise whatever is in storage. Unknown/corrupt data never crashes the app. */
-function parse(raw: string | null): AppState {
-  if (!raw) return freshState();
+function parse(raw: string | null, legacy: string | null = null): AppState {
+  const base = freshState();
   try {
-    const d = JSON.parse(raw);
-    if (!isObj(d) || d.version !== SCHEMA_VERSION) return freshState();
-    const base = freshState();
+    const d = raw ? JSON.parse(raw) : legacy ? JSON.parse(legacy) : null;
+    if (!isObj(d) || (d.version !== SCHEMA_VERSION && d.version !== 1)) return base;
     const tariff = isObj(d.tariff) && isNum(d.tariff.perKwh) && typeof d.tariff.currency === "string" ? (d.tariff as AppState["tariff"]) : null;
-    return {
+    const common = {
       version: SCHEMA_VERSION,
       onboarding: isObj(d.onboarding)
         ? { completed: d.onboarding.completed === true, completedAt: (d.onboarding.completedAt as string) ?? null }
         : base.onboarding,
       profile: isObj(d.profile) ? { buildingType: (d.profile.buildingType as BuildingType) ?? null } : base.profile,
       tariff,
-      preferences: isObj(d.preferences)
-        ? {
-            unit: d.preferences.unit === "kWh" ? "kWh" : "Wh",
-            motion: d.preferences.motion === "reduced" ? "reduced" : "system",
-          }
-        : base.preferences,
+      preferences: { motion: isObj(d.preferences) && d.preferences.motion === "reduced" ? ("reduced" as const) : ("system" as const) },
+    };
+    // v1 held 10-minute analyses, which can't become bill analyses: keep only the setup.
+    if (d.version === 1) return { ...base, ...common };
+    return {
+      ...common,
       analyses: Array.isArray(d.analyses) ? d.analyses.filter(isAnalysis) : [],
       actions: isObj(d.actions) ? (d.actions as AppState["actions"]) : {},
-      readings: isObj(d.readings)
-        ? Object.fromEntries(Object.entries(d.readings).filter(([, v]) => isNum(v)) as [string, number][])
+      bills: isObj(d.bills)
+        ? Object.fromEntries(
+            Object.entries(d.bills).filter(([k, v]) => isMonth(k) && isObj(v) && isNum(v.kwh) && isNum(v.days) && v.days > 0),
+          ) as AppState["bills"]
         : {},
     };
   } catch {
-    return freshState();
+    return base;
   }
 }
 
@@ -138,7 +134,8 @@ function emit() {
 function load(): AppState {
   if (state) return state;
   try {
-    state = parse(window.localStorage.getItem(STORAGE_KEY));
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    state = parse(raw, raw ? null : window.localStorage.getItem(LEGACY_KEY));
   } catch {
     storageError = "This browser blocked local storage, so changes will be lost when the page closes.";
     state = freshState();
@@ -203,13 +200,12 @@ export const setTariff = (tariff: NonNullable<AppState["tariff"]>) => update((s)
 export const setPreferences = (p: Partial<AppState["preferences"]>) =>
   update((s) => ({ ...s, preferences: { ...s.preferences, ...p } }));
 
-/** Save an analysis and remember the readings it used (for future auto-derived history). */
-export function saveAnalysis(a: Analysis, readings: Record<string, number>) {
+/** Save an analysis and remember every bill it used, so the next analysis is pre-filled. */
+export function saveAnalysis(a: Analysis) {
   update((s) => {
-    const merged = { ...s.readings, ...readings, [a.timestamp]: a.actualWh };
-    const keys = Object.keys(merged).sort();
-    const trimmed = keys.length > MAX_READINGS ? Object.fromEntries(keys.slice(-MAX_READINGS).map((k) => [k, merged[k]])) : merged;
-    return { ...s, analyses: [a, ...s.analyses.filter((x) => x.id !== a.id)], readings: trimmed };
+    const bills = { ...s.bills };
+    for (const b of [...a.history, a.current]) bills[b.month] = { kwh: b.kwh, days: b.days };
+    return { ...s, analyses: [a, ...s.analyses.filter((x) => x.id !== a.id)], bills };
   });
 }
 
@@ -234,6 +230,7 @@ export const toggleAction = (analysisId: string, actionId: string) =>
 export function clearAllData() {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_KEY);
   } catch {
     /* ignore */
   }

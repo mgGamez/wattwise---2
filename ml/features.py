@@ -1,58 +1,76 @@
-"""Step 2: turn the cleaned hourly table into model features.
+"""Step 2: candidate features.
 
-LEAKAGE RULE: every feature for hour t uses only information from before hour t
-(or the calendar, which is known in advance). Every consumption- and weather-based
-feature therefore starts with .shift(1) = "look one hour into the past".
+LEAKAGE RULE: the feature row for interval t may only use the calendar (known in
+advance) and measurements from BEFORE t. Every lag/rolling/sensor feature therefore
+starts with .shift(1) = "look one 10-minute interval into the past".
+train.py checks this automatically (leakage_check).
 """
+import numpy as np
 import pandas as pd
-from pandas.tseries.holiday import USFederalHolidayCalendar
 
-TARGET = "electricity_kwh"
+TARGET = "appliances_wh"
+INTERVAL = pd.Timedelta("10min")
+PER_HOUR = 6           # 10-minute intervals per hour
+PER_DAY = 144
 
-FEATURES = [
-    # calendar (known in advance)
-    "hour", "day_of_week", "month", "is_weekend", "is_holiday",
-    # weather from the previous hour
-    "temperature_prev_hour", "humidity_prev_hour",
-    # past consumption
-    "previous_hour_consumption", "previous_day_same_hour",
-    "rolling_24h_average", "rolling_7day_average",
-]
+OUTDOOR = ["outdoor_temp_c", "outdoor_humidity_pct", "pressure_mm_hg", "windspeed_m_s", "visibility_km", "dewpoint_c"]
+INDOOR = [f"T{i}" for i in range(1, 10)] + [f"RH_{i}" for i in range(1, 10)]
 
-# The anomaly detector deliberately leaves out previous_hour_consumption.
-# With it, the model mostly copies the last hour, so a spike that lasts many hours
-# looks "expected" after its first hour. train.py measures this (injection test).
-PATTERN_FEATURES = [f for f in FEATURES if f != "previous_hour_consumption"]
+# Candidate name -> columns it adds. Groups are tested (added/removed) together.
+CANDIDATES = {
+    "hour": ["hour"],
+    "hour_cyclic": ["hour_sin", "hour_cos"],
+    "day_of_week": ["day_of_week"],
+    "day_of_week_cyclic": ["dow_sin", "dow_cos"],
+    "is_weekend": ["is_weekend"],
+    "previous_interval": ["previous_interval"],
+    "previous_hour": ["previous_hour"],
+    "previous_day_same_time": ["previous_day_same_time"],
+    "rolling_1h_mean": ["rolling_1h_mean"],
+    "rolling_6h_mean": ["rolling_6h_mean"],
+    "rolling_24h_mean": ["rolling_24h_mean"],
+    "lights_previous_interval": ["lights_previous_interval"],
+    "outdoor_weather_previous_interval": [f"{c}_prev" for c in OUTDOOR],
+    "indoor_conditions_previous_interval": [f"{c}_prev" for c in INDOOR],
+}
+
+
+def columns_for(candidates):
+    return [c for name in candidates for c in CANDIDATES[name]]
 
 
 def make_features(df):
-    """df: hourly DataFrame indexed by timestamp with columns
-    electricity_kwh, temperature_c, humidity_pct. Index must be a regular hourly grid
-    (gaps present as NaN rows), so that shift(24) really means 24 hours earlier."""
-    df = df.asfreq("h")
+    """df: 10-minute DataFrame indexed by timestamp (cleaned.csv)."""
+    df = df.asfreq(INTERVAL)
     out = pd.DataFrame(index=df.index)
     out[TARGET] = df[TARGET]
-
     t = df.index
+
+    # Calendar (known in advance)
+    hour = t.hour + t.minute / 60
     out["hour"] = t.hour
-    out["day_of_week"] = t.dayofweek  # 0 = Monday
-    out["month"] = t.month
+    out["hour_sin"] = np.sin(2 * np.pi * hour / 24)
+    out["hour_cos"] = np.cos(2 * np.pi * hour / 24)
+    out["day_of_week"] = t.dayofweek
+    out["dow_sin"] = np.sin(2 * np.pi * t.dayofweek / 7)
+    out["dow_cos"] = np.cos(2 * np.pi * t.dayofweek / 7)
     out["is_weekend"] = (t.dayofweek >= 5).astype(int)
-    holidays = USFederalHolidayCalendar().holidays(t.min(), t.max())
-    out["is_holiday"] = t.normalize().isin(holidays).astype(int)
 
-    out["temperature_prev_hour"] = df["temperature_c"].shift(1)
-    out["humidity_prev_hour"] = df["humidity_pct"].shift(1)
+    # Past consumption
+    past = df[TARGET].shift(1)
+    out["previous_interval"] = past                                   # t - 10 min
+    out["previous_hour"] = df[TARGET].shift(PER_HOUR)                # t - 60 min
+    out["previous_day_same_time"] = df[TARGET].shift(PER_DAY)        # t - 24 h
+    out["rolling_1h_mean"] = past.rolling(PER_HOUR).mean()           # mean of the 6 intervals before t
+    out["rolling_6h_mean"] = past.rolling(6 * PER_HOUR).mean()
+    out["rolling_24h_mean"] = past.rolling(PER_DAY).mean()
 
-    past = df[TARGET].shift(1)  # consumption known before hour t
-    out["previous_hour_consumption"] = past
-    out["previous_day_same_hour"] = df[TARGET].shift(24)
-    # min_periods lets a short gap pass, but a mostly-missing window gives NaN
-    out["rolling_24h_average"] = past.rolling(24, min_periods=20).mean()
-    out["rolling_7day_average"] = past.rolling(168, min_periods=150).mean()
+    # Other sensors, previous interval only
+    out["lights_previous_interval"] = df["lights_wh"].shift(1)
+    for c in OUTDOOR + INDOOR:
+        out[f"{c}_prev"] = df[c].shift(1)
     return out
 
 
-def model_ready(features):
-    """Rows where the target and every feature are present."""
-    return features.dropna(subset=FEATURES + [TARGET])
+def model_ready(features, columns):
+    return features.dropna(subset=columns + [TARGET])

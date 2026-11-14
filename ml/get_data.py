@@ -1,35 +1,23 @@
-"""Step 0 (optional): re-create data/raw/ from the original BDG2 files.
+"""Step 0 (optional): re-download the raw data from the UCI repository.
 
-The two small CSVs in data/raw/ are already in the repo, so you only need this
-to check where they came from. It downloads ~195 MB to a temporary folder.
+data/raw/energydata_complete.csv is already in the repo; this only shows where it came from.
 
 Run:  python ml/get_data.py
 """
-import tempfile
+import io
 import urllib.request
+import zipfile
 from pathlib import Path
 
-import pandas as pd
-
-BASE = "https://media.githubusercontent.com/media/buds-lab/building-data-genome-project-2/master/data/"
-BUILDING, SITE = "Rat_education_Dann", "Rat"
+URL = "https://archive.ics.uci.edu/static/public/374/appliances+energy+prediction.zip"
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
 
 
 def main():
     RAW.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        elec_file, weather_file = Path(tmp, "electricity.csv"), Path(tmp, "weather.csv")
-        urllib.request.urlretrieve(BASE + "meters/cleaned/electricity_cleaned.csv", elec_file)
-        urllib.request.urlretrieve(BASE + "weather/weather.csv", weather_file)
-
-        elec = pd.read_csv(elec_file, usecols=["timestamp", BUILDING])
-        elec.rename(columns={BUILDING: "electricity_kwh"}).to_csv(RAW / "rat_education_dann_electricity.csv", index=False)
-
-        weather = pd.read_csv(weather_file)
-        weather = weather[weather.site_id == SITE][["timestamp", "airTemperature", "dewTemperature"]]
-        weather.to_csv(RAW / "rat_site_weather.csv", index=False)
-    print("Wrote", list(RAW.glob("*.csv")))
+    with urllib.request.urlopen(URL) as r:
+        zipfile.ZipFile(io.BytesIO(r.read())).extract("energydata_complete.csv", RAW)
+    print("Wrote", RAW / "energydata_complete.csv")
 
 
 if __name__ == "__main__":

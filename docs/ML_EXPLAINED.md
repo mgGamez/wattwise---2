@@ -6,148 +6,156 @@ This guide is for explaining the project to judges. All numbers come from `resul
 
 ## 1. What does the model predict?
 
-For every hour, the model predicts **how much electricity the school would normally use in that hour** (in kWh), given the time, the weather and the building's recent history.
+Every 10 minutes, the model predicts **how much energy the appliances would normally use in the next 10 minutes** (in Wh), based on what happened just before.
 
-We call this the **expected usage**. Then we compare it with what the meter actually measured. If the building used a lot more than expected, that hour is worth a closer look.
+That's the **expected usage**. We compare it with what the meter actually measured. If usage was far higher than expected, that interval is worth a closer look.
 
-> The model does not predict "waste". It predicts "normal". Anything far above normal is a **period requiring investigation**.
+> The model predicts "normal", not "waste". Anything far above normal is a **period requiring investigation**.
+
+The data is one house's appliance energy (UCI Appliances Energy Prediction), in **Wh per 10-minute interval**. It's not a school or office.
 
 ---
 
 ## 2. What do the input features mean?
 
-A *feature* is one piece of information the model gets to make its prediction. For the hour being predicted (call it hour *t*):
+We built 14 candidate features (some are groups of columns). Every one uses only information from **before** the interval being predicted:
 
-| Feature | Meaning | Why it helps |
-|---|---|---|
-| `hour` | 0–23 | Schools use more power during the school day |
-| `day_of_week` | 0 = Monday … 6 = Sunday | Weekdays and weekends behave differently |
-| `month` | 1–12 | Seasons (e.g. air-conditioning in summer) |
-| `is_weekend` | 1 on Saturday/Sunday | Same idea, made explicit |
-| `is_holiday` | 1 on a US federal holiday | Building is usually quiet |
-| `temperature_prev_hour` | outdoor °C one hour before *t* | Hot weather means more cooling |
-| `humidity_prev_hour` | outdoor % humidity one hour before *t* | Humid weather affects cooling |
-| `previous_day_same_hour` | kWh used at the same hour yesterday | "Yesterday at 10am" is a good guess for "today at 10am" |
-| `rolling_24h_average` | average kWh over the 24 hours before *t* | The building's current level |
-| `rolling_7day_average` | average kWh over the 7 days before *t* | The building's level this week |
+| Feature | Meaning |
+|---|---|
+| `hour`, `hour_cyclic` | time of day; the cyclic version uses sin/cos so 23:50 and 00:00 count as close together |
+| `day_of_week`, `day_of_week_cyclic`, `is_weekend` | which day it is |
+| `previous_interval` | Wh used in the previous 10 minutes |
+| `previous_hour` | Wh used in the 10 minutes one hour ago |
+| `previous_day_same_time` | Wh used at the same time yesterday |
+| `rolling_1h_mean` / `rolling_6h_mean` / `rolling_24h_mean` | average use over the last 1 / 6 / 24 hours (not including now) |
+| `lights_previous_interval` | lighting energy in the previous 10 minutes |
+| outdoor / indoor sensors (previous interval) | weather, room temperatures and humidity, 10 minutes earlier |
 
-We also built `previous_hour_consumption` (kWh in the hour before *t*). We tested it, and then **chose not to use it** in the anomaly detector. See section 9.
+**Only features that improved validation performance were kept.** The method is forward selection: start with nothing, repeatedly add the single feature that lowers validation MAE the most, and stop when no feature improves it by at least 0.5%. The selected Gradient Boosting model uses just three features:
+
+- **previous_interval**
+- **rolling_1h_mean**
+- **rolling_6h_mean**
+
+Time of day, weekday, weather and indoor sensors did **not** improve validation performance, so they were left out.
 
 ---
 
 ## 3. What is a baseline?
 
-A **baseline** is the simplest reasonable method, used as a yardstick. If our ML model can't beat it, the ML isn't worth using.
+A **baseline** is the simplest reasonable method, used as a yardstick. Ours: *"for each weekday and hour, the average usage in the training period."* If ML can't beat it, ML isn't worth it.
 
-Our baseline: *"For each weekday and hour, take the average usage from 2016."* For example, the prediction for any Tuesday at 10:00 in 2017 = the average of all Tuesdays at 10:00 in 2016.
-
-We also show a second simple reference: *"copy the previous hour"*. It's not ML at all, but it's a strong guess, and it shows why "more accurate" is not always "more useful" (section 9).
+We also report a second, tougher reference: **"copy the previous 10-minute reading"**. It isn't ML, but it's a strong guess (section 9).
 
 ---
 
-## 4. Why must the split be chronological?
+## 4. Why train / validation / test, in time order?
 
-We train on **2016** and test on **2017**. We never shuffle the hours.
+We split the data **by time**:
 
-If we shuffled, the model could be trained on Tuesday 10:00 and 12:00 and then "tested" on 11:00 on the same day. That's easy because it already saw the answer's neighbours. In real life a facilities manager only ever has the past and wants to judge the present. Testing on a whole year the model has never seen is the honest version of that.
-
-### How we prevent data leakage (using the future by accident)
-- Every consumption feature starts with `.shift(1)`, meaning "look at the past only". The 24-hour average for 10:00 uses 10:00 yesterday up to 09:00 today, never 10:00 itself.
-- Weather is taken from the **previous** hour.
-- Missing weather is filled by copying the **last** known value, never by averaging with a future value.
-- The baseline averages use **2016 only**.
-- No model settings were tuned by looking at 2017 results.
-
----
-
-## 5. What does MAE mean?
-
-**Mean Absolute Error**: on average, how many kWh the prediction is off by, ignoring whether it's too high or too low.
-
-Example: errors of +10, −5 and +3 give MAE = (10 + 5 + 3) / 3 = **6 kWh**.
-
-Our best model's MAE on 2017 is **11.1 kWh**. The school uses about 196 kWh per hour on average, so the typical error is about 6%.
-
-## 6. What does RMSE mean?
-
-**Root Mean Squared Error**: square every error, average them, then take the square root.
-
-Squaring makes big errors count much more. Example: errors of +10, −5 and +3 give RMSE = √((100 + 25 + 9) / 3) ≈ **6.7 kWh**, which is higher than the MAE of 6.
-
-If RMSE is much bigger than MAE, the model has some large misses. Ours: MAE 11.1, RMSE 17.5.
-
-## Results on the unseen 2017 year
-
-| Method | MAE (kWh) | RMSE (kWh) |
+| Period | Share | Purpose |
 |---|---|---|
-| Baseline (2016 weekday + hour average) | 44.64 | 52.40 |
-| Linear Regression | 13.41 | 20.67 |
-| **Random Forest (chosen)** | **11.12** | 17.49 |
-| Gradient Boosting | 11.33 | 16.86 |
+| Train (12 Jan – 16 Apr) | 70% | the models learn from this |
+| Validation (16 Apr – 7 May) | 15% | we compare models, choose features and settings, and set the anomaly threshold |
+| Test (7 May – 27 May) | 15% | looked at **once**, at the very end |
 
-Random Forest has the lowest MAE, so we picked it. Gradient Boosting is almost the same and has slightly lower RMSE, so the two are essentially tied. All three ML models are about **4× better than the baseline**.
+**Why not shuffle?** With shuffled rows, the model could learn from 10:00 and 10:20 and then be "tested" on 10:10. That's easy because the neighbours give the answer away. In real life you only have the past.
+
+**Why a separate validation set?** If we picked the best model by looking at test results, the test score would be flattering: we'd have chosen whatever happened to fit that period. With validation used for every choice, the test score is an honest estimate of performance on new data.
+
+### How we prevent data leakage
+- Every lag and rolling feature starts with `.shift(1)`, so it ends at the previous interval.
+- Sensors are taken from the previous interval.
+- **Automatic check:** for 20 random times *t*, we changed every measurement at *t* and later, rebuilt the features, and confirmed that the features at *t* didn't change. Result: **passed**.
+
+---
+
+## 5. MAE
+
+**Mean Absolute Error**: the average size of the error, ignoring direction. Errors of +10, −5 and +3 give MAE = 18 / 3 = **6 Wh**.
+
+## 6. RMSE
+
+**Root Mean Squared Error**: square the errors, average them, take the square root. Big errors count much more. The same errors give √((100 + 25 + 9) / 3) ≈ **6.7 Wh**.
+
+When RMSE is much bigger than MAE, there are some large misses. In our data those are sudden spikes.
+
+## Results
+
+**Validation** (used for choosing):
+
+| Model | MAE | RMSE |
+|---|---|---|
+| Baseline | 49.10 | 88.70 |
+| Linear Regression | 26.04 | 61.88 |
+| Random Forest | 26.81 | 60.89 |
+| **Gradient Boosting (selected)** | **25.90** | **59.44** |
+
+**Final test** (evaluated once):
+
+| | MAE | RMSE |
+|---|---|---|
+| Baseline | 48.69 | 86.86 |
+| **Gradient Boosting** | **26.26** | **60.42** |
+| Improvement | **46.1%** | **30.4%** |
 
 ---
 
 ## 7. What is a residual?
 
 ```
-residual = actual usage − predicted usage
+residual = actual − predicted
 ```
 
-- Residual **+50** means the building used 50 kWh **more** than expected in that hour.
-- Residual **−20** means it used 20 kWh **less** than expected.
-
-We only care about **large positive residuals** (unexpectedly high usage).
+A residual of +300 Wh means 300 Wh **more** than expected in those 10 minutes. We focus on large positive residuals.
 
 ## 8. How does anomaly detection work?
 
-1. Predict every hour of 2017 and calculate the residual.
-2. Keep only the positive residuals (4,553 hours).
-3. Find the value that only the **top 5%** of them exceed. For us that's **40.9 kWh**. We did not pick this number by hand; it comes from the data.
-4. Every hour with a residual of at least 40.9 kWh is flagged. That gives **228 hours**, grouped into **49 periods** of consecutive hours.
-5. Each flagged hour gets a **percentile score**. For example, 99 means "bigger than 99% of the positive surprises".
-
-Saved in `results/anomalies.csv`: timestamp, actual, predicted, residual, % above prediction, percentile, period id.
-
-**Limitation:** "top 5%" always flags 5% of positive hours, even in a perfectly normal year. It's a ranking ("look at these first"), not proof that something is wrong.
+1. Calculate residuals on the **validation** period (never the test period).
+2. Keep only the positive ones (1,049 intervals).
+3. Take the value that only the top 5% exceed: **219 Wh**. This threshold comes from the data, not a hand-picked number.
+4. On the test period, any interval with a residual of at least 219 Wh is flagged. That gives **49 intervals in 42 periods**.
+5. Each flagged interval gets a percentile score, e.g. 99.5 means "bigger than 99.5% of the positive surprises seen in validation".
 
 ---
 
-## 9. Our most interesting finding: more accurate ≠ better detector
+## 9. Honest findings
 
-With `previous_hour_consumption` included, the models are far more accurate (Random Forest MAE **4.2** instead of 11.1). However, just copying the previous hour without any ML already gets MAE **4.4**. That model mostly learns "next hour ≈ this hour".
+**ML only slightly beats "copy the last reading".** On the test period, copying the previous 10-minute value gets MAE 26.7. The model gets 26.3. The model's bigger advantage is RMSE (60.4 vs 66.8): when a spike ends, it returns to normal faster than a copy would. Appliance use in a house is mostly short, random switch-on events that the past can't predict.
 
-The problem: if usage jumps up and **stays** up (say equipment left running all night), then after the first hour, "this hour" is already high. The model then expects high usage and stops flagging it.
+**Why the tree models looked worse before.** When given **all** candidate features, Random Forest and Gradient Boosting overfit:
 
-**How we tested it.** Real anomalies aren't labelled, so we made fake ones. We picked 30 random 12-hour windows in 2017, raised usage by 25%, and checked what each detector flagged:
+| | Train MAE | Validation MAE |
+|---|---|---|
+| Random Forest, all features | 19.7 | 32.9 |
+| Gradient Boosting, all features | 28.6 | 38.0 |
+| Random Forest, selected features | 30.4 | 26.8 |
+| Gradient Boosting, selected features | 27.9 | 25.9 |
 
-| Detector | Fake-spike hours flagged | Fake spikes noticed at all | Flags on normal hours |
-|---|---|---|---|
-| Pattern model (no previous hour) – **used** | **48.8%** | 22 / 30 | 211 |
-| All features incl. previous hour | 33.7% | 29 / 30 | 192 |
+With many indoor and outdoor sensor columns, trees memorise training-period details. On top of that, the weather changes over time: the mean outdoor temperature is 5.7 °C in training, 8.2 °C in validation and 14.5 °C in test. Trees can't extrapolate to values they never saw. Using fewer features and modest settings (`min_samples_leaf=25`, `max_depth=4`) removed the overfitting. Feature scaling made no difference, as expected for these models.
 
-This is a trade-off. The previous-hour model notices that *something* started in more cases. The pattern model keeps flagging the spike for **longer**, which is closer to the question a facilities manager cares about: *"how long was usage too high?"* We chose the pattern model and report both.
+**The detector only catches large jumps.** In a diagnostic, we added +150 Wh for one hour at 30 random times in the test period. Only 3.4% of those intervals were flagged. The reasons:
+- the threshold (219 Wh) is above +150 Wh;
+- after the first 10 minutes, the model's "previous interval" input already contains the extra usage, so it expects it.
+
+So WATTWISE in its current form flags **big sudden spikes**, not moderate sustained increases.
 
 ---
 
 ## 10. What the model cannot know
 
-The model only sees the clock, the calendar, the outdoor weather and the meter's own history. It **cannot** see:
+The model only sees the last few hours of appliance usage. It cannot see:
+- which appliance was switched on (oven, washing machine, kettle...)
+- how many people are at home, or their schedule
+- visitors, holidays or changes in routine
+- meter errors
 
-- the school timetable: term start/end, exam weeks, snow days, teacher-only days, summer programmes
-- how many people are in the building
-- events: evening events, sports, rentals, construction
-- equipment: what's switched on, faults, maintenance, thermostat or schedule changes
-- metering errors: a wrong reading looks just like real usage
+All 10 of the largest test errors were intervals where use was far **higher** than expected, typically 450–525 Wh above. These are sudden switch-ons that the past can't predict. We don't guess what caused them.
 
-Looking at the 10 biggest errors (`results/failure_analysis.md`), **all** of them are hours where the school used more than expected. They're all in the morning, and several fall on the first day back after a long weekend (the days after Memorial Day and Labor Day, and a Monday). The model leans on "yesterday" and "last 24 hours". When yesterday was a quiet day, it expects a quiet day today. We can see *when* the model fails, but we can't tell *why* the building used more energy, so we don't guess.
+## 11. Remaining limitations
 
-Most flagged hours are in late May and August–September, during the daytime. That's a pattern in *when* flags happen, not an explanation.
-
-## 11. Other limitations
-
-- **One building, two years.** Results may not carry over to other buildings.
-- **One test year.** The model is trained on only one year, so it has seen each season only once.
-- **Choosing the best model on the test year** is a small form of selection, but with three similar models it barely matters.
-- **No real labels.** We can't measure true accuracy of anomaly detection on real data, which is why we used the fake-spike test.
+- **One house, 4.5 months.** The test period (May) is warmer than training (Jan–Apr).
+- **The model is trained on the training period only.** It doesn't learn from validation data, because that data was needed to set the threshold honestly.
+- **Validation scores are slightly optimistic**, because we chose features and settings with them. The test score is the honest number.
+- **"Top 5%" is relative.** It always flags some intervals, even in a perfectly normal period.
+- **No real labels.** We can't measure true detection accuracy on real anomalies.

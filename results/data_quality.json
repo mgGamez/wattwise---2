@@ -1,68 +1,33 @@
 {
-  "raw_rows_electricity": 17544,
-  "raw_rows_weather": 17539,
-  "duplicate_timestamps_electricity": 0,
-  "duplicate_timestamps_weather": 0,
+  "raw_rows": 19735,
+  "dropped_columns": [
+    "rv1",
+    "rv2"
+  ],
+  "duplicate_timestamps": 0,
   "measurement_intervals_found": {
-    "0 days 01:00:00": 17543
+    "0 days 00:10:00": 19734
   },
-  "missing_timestamps_electricity": 0,
-  "negative_or_impossible_values": 0,
-  "suspiciously_low_values_below_10pct_of_median": 0,
-  "missing_energy_values": 52,
-  "missing_energy_gaps": [
-    {
-      "start": "2016-03-13 02:00:00",
-      "end": "2016-03-13 02:00:00",
-      "hours": 1
-    },
-    {
-      "start": "2016-05-24 00:00:00",
-      "end": "2016-05-24 23:00:00",
-      "hours": 24
-    },
-    {
-      "start": "2016-11-06 00:00:00",
-      "end": "2016-11-06 00:00:00",
-      "hours": 1
-    },
-    {
-      "start": "2017-03-12 02:00:00",
-      "end": "2017-03-12 02:00:00",
-      "hours": 1
-    },
-    {
-      "start": "2017-06-27 00:00:00",
-      "end": "2017-06-27 23:00:00",
-      "hours": 24
-    },
-    {
-      "start": "2017-11-05 00:00:00",
-      "end": "2017-11-05 00:00:00",
-      "hours": 1
-    }
-  ],
-  "missing_weather_values_before_fill": {
-    "airTemperature": 11,
-    "dewTemperature": 14
-  },
-  "missing_weather_values_after_fill": {
-    "airTemperature": 0,
-    "dewTemperature": 0
-  },
-  "clean_rows": 17544,
+  "missing_timestamps": 0,
+  "negative_values_appliances_wh": 0,
+  "negative_values_lights_wh": 0,
+  "missing_energy_values": 0,
+  "missing_energy_gaps": [],
+  "missing_values_other_columns": 0,
+  "clean_rows": 19735,
   "date_range": [
-    "2016-01-01 00:00:00",
-    "2017-12-31 23:00:00"
+    "2016-01-11 17:00:00",
+    "2016-05-27 18:00:00"
   ],
-  "electricity_kwh_summary": {
-    "count": 17492.0,
-    "mean": 195.02,
-    "std": 51.66,
-    "min": 110.04,
-    "25%": 153.89,
-    "50%": 177.08,
-    "75%": 236.12,
-    "max": 360.4
-  }
+  "appliances_wh_summary": {
+    "count": 19735.0,
+    "mean": 97.69,
+    "std": 102.52,
+    "min": 10.0,
+    "25%": 50.0,
+    "50%": 60.0,
+    "75%": 100.0,
+    "max": 1080.0
+  },
+  "share_of_intervals_above_300_wh": 0.0573
 }

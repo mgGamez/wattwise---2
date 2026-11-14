@@ -1,101 +1,674 @@
 {
-  "building": "Rat_education_Dann (K-12 school, Washington DC, BDG2)",
+  "dataset": {
+    "name": "UCI Appliances Energy Prediction (Candanedo et al., 2017)",
+    "what_is_measured": "appliance electricity use of one low-energy house, Wh per 10-minute interval",
+    "rows": 19735,
+    "interval": "10 minutes",
+    "units": "Wh per 10-minute interval",
+    "license": "CC BY 4.0"
+  },
+  "split": "chronological 70% / 15% / 15%, never shuffled",
   "train_period": [
-    "2016-01-07 06:00:00",
-    "2016-12-31 23:00:00"
+    "2016-01-12 17:00:00",
+    "2016-04-16 15:10:00"
+  ],
+  "validation_period": [
+    "2016-04-16 15:20:00",
+    "2016-05-07 04:30:00"
   ],
   "test_period": [
-    "2017-01-01 00:00:00",
-    "2017-12-31 23:00:00"
+    "2016-05-07 04:40:00",
+    "2016-05-27 18:00:00"
   ],
-  "train_rows": 8454,
-  "test_rows": 8580,
-  "test_mean_consumption_kwh": 196.15,
-  "model_comparison": {
-    "Baseline (2016 average for same weekday + hour)": {
-      "MAE_kwh": 44.64,
-      "RMSE_kwh": 52.4
-    },
-    "Reference: copy the previous hour (no ML)": {
-      "MAE_kwh": 4.38,
-      "RMSE_kwh": 7.88
-    },
+  "validation_model_comparison": {
     "Linear Regression": {
-      "MAE_kwh": 13.41,
-      "RMSE_kwh": 20.67
+      "features": [
+        "previous_interval",
+        "rolling_1h_mean",
+        "lights_previous_interval"
+      ],
+      "best_params": {},
+      "validation": {
+        "MAE_wh": 26.04,
+        "RMSE_wh": 61.88
+      },
+      "train": {
+        "MAE_wh": 30.87,
+        "RMSE_wh": 69.06
+      }
     },
     "Random Forest": {
-      "MAE_kwh": 11.12,
-      "RMSE_kwh": 17.49
+      "features": [
+        "previous_interval"
+      ],
+      "best_params": {
+        "max_depth": null,
+        "min_samples_leaf": 25,
+        "max_features": 1.0
+      },
+      "validation": {
+        "MAE_wh": 26.81,
+        "RMSE_wh": 60.89
+      },
+      "train": {
+        "MAE_wh": 30.42,
+        "RMSE_wh": 67.45
+      }
     },
     "Gradient Boosting": {
-      "MAE_kwh": 11.33,
-      "RMSE_kwh": 16.86
+      "features": [
+        "previous_interval",
+        "rolling_1h_mean",
+        "rolling_6h_mean"
+      ],
+      "best_params": {
+        "learning_rate": 0.05,
+        "max_depth": 4
+      },
+      "validation": {
+        "MAE_wh": 25.9,
+        "RMSE_wh": 59.44
+      },
+      "train": {
+        "MAE_wh": 27.89,
+        "RMSE_wh": 61.01
+      }
+    },
+    "Baseline": {
+      "validation": {
+        "MAE_wh": 49.1,
+        "RMSE_wh": 88.7
+      }
     }
   },
-  "model_comparison_features": [
-    "hour",
-    "day_of_week",
-    "month",
-    "is_weekend",
-    "is_holiday",
-    "temperature_prev_hour",
-    "humidity_prev_hour",
-    "previous_day_same_hour",
-    "rolling_24h_average",
-    "rolling_7day_average"
-  ],
-  "best_model": "Random Forest",
-  "selection_rule": "lowest MAE on the unseen 2017 test year (pattern feature set)",
-  "best_model_feature_importances": {
-    "hour": 0.0153,
-    "day_of_week": 0.0127,
-    "month": 0.0032,
-    "is_weekend": 0.0026,
-    "is_holiday": 0.0002,
-    "temperature_prev_hour": 0.0461,
-    "humidity_prev_hour": 0.0089,
-    "previous_day_same_hour": 0.1038,
-    "rolling_24h_average": 0.7959,
-    "rolling_7day_average": 0.0113
+  "selected_model": {
+    "name": "Gradient Boosting",
+    "features": [
+      "previous_interval",
+      "rolling_1h_mean",
+      "rolling_6h_mean"
+    ],
+    "params": {
+      "learning_rate": 0.05,
+      "max_depth": 4
+    },
+    "selection_rule": "lowest validation MAE (test set not used)"
   },
-  "experiment_all_features_including_previous_hour": {
+  "final_test_baseline": {
+    "MAE_wh": 48.69,
+    "RMSE_wh": 86.86
+  },
+  "final_test_selected_model": {
+    "MAE_wh": 26.26,
+    "RMSE_wh": 60.42
+  },
+  "percentage_improvement_over_baseline": {
+    "MAE_pct": 46.1,
+    "RMSE_pct": 30.4
+  },
+  "reference_copy_previous_interval_no_ML": {
+    "validation": {
+      "MAE_wh": 26.16,
+      "RMSE_wh": 66.43
+    },
+    "final_test": {
+      "MAE_wh": 26.74,
+      "RMSE_wh": 66.84
+    },
+    "note": "Naive rule 'next 10 minutes = last 10 minutes'. Reported for honesty; not used for selection."
+  },
+  "anomaly_methodology": {
+    "residual": "actual - predicted",
+    "threshold_rule": "95th percentile of POSITIVE residuals on the validation period",
+    "threshold_wh": 219.02,
+    "validation_positive_residuals": 1049,
+    "final_test_flagged_intervals": 49,
+    "final_test_flagged_periods": 42,
+    "score": "percentile of the residual within validation positive residuals",
+    "injection_diagnostic": {
+      "events": 30,
+      "event_length_minutes": 60,
+      "added_wh_per_interval": 150,
+      "injected_intervals_flagged_pct": 3.4,
+      "events_with_at_least_one_flag": 4,
+      "flags_on_untouched_intervals": 43,
+      "note": "Diagnostic on the test period; not used for any choice."
+    }
+  },
+  "failure_analysis": {
+    "largest_errors": [
+      {
+        "timestamp": "2016-05-21 09:40:00",
+        "day": "Sat",
+        "previous_interval": 390.0,
+        "rolling_1h_mean": 181.7,
+        "rolling_6h_mean": 93.6,
+        "predicted_wh": 264.98,
+        "actual_wh": 790.0,
+        "error_wh": 525.0
+      },
+      {
+        "timestamp": "2016-05-27 09:40:00",
+        "day": "Fri",
+        "previous_interval": 50.0,
+        "rolling_1h_mean": 73.3,
+        "rolling_6h_mean": 80.8,
+        "predicted_wh": 60.33,
+        "actual_wh": 580.0,
+        "error_wh": 519.7
+      },
+      {
+        "timestamp": "2016-05-16 17:40:00",
+        "day": "Mon",
+        "previous_interval": 110.0,
+        "rolling_1h_mean": 100.0,
+        "rolling_6h_mean": 145.0,
+        "predicted_wh": 118.31,
+        "actual_wh": 630.0,
+        "error_wh": 511.7
+      },
+      {
+        "timestamp": "2016-05-26 11:40:00",
+        "day": "Thu",
+        "previous_interval": 100.0,
+        "rolling_1h_mean": 123.3,
+        "rolling_6h_mean": 156.4,
+        "predicted_wh": 104.22,
+        "actual_wh": 600.0,
+        "error_wh": 495.8
+      },
+      {
+        "timestamp": "2016-05-26 09:50:00",
+        "day": "Thu",
+        "previous_interval": 460.0,
+        "rolling_1h_mean": 161.7,
+        "rolling_6h_mean": 95.8,
+        "predicted_wh": 329.89,
+        "actual_wh": 820.0,
+        "error_wh": 490.1
+      },
+      {
+        "timestamp": "2016-05-07 18:10:00",
+        "day": "Sat",
+        "previous_interval": 80.0,
+        "rolling_1h_mean": 81.7,
+        "rolling_6h_mean": 87.8,
+        "predicted_wh": 87.06,
+        "actual_wh": 560.0,
+        "error_wh": 472.9
+      },
+      {
+        "timestamp": "2016-05-21 11:10:00",
+        "day": "Sat",
+        "previous_interval": 110.0,
+        "rolling_1h_mean": 356.7,
+        "rolling_6h_mean": 179.4,
+        "predicted_wh": 122.86,
+        "actual_wh": 590.0,
+        "error_wh": 467.1
+      },
+      {
+        "timestamp": "2016-05-13 07:50:00",
+        "day": "Fri",
+        "previous_interval": 80.0,
+        "rolling_1h_mean": 98.3,
+        "rolling_6h_mean": 77.2,
+        "predicted_wh": 94.11,
+        "actual_wh": 560.0,
+        "error_wh": 465.9
+      },
+      {
+        "timestamp": "2016-05-13 11:10:00",
+        "day": "Fri",
+        "previous_interval": 110.0,
+        "rolling_1h_mean": 80.0,
+        "rolling_6h_mean": 149.4,
+        "predicted_wh": 136.25,
+        "actual_wh": 600.0,
+        "error_wh": 463.8
+      },
+      {
+        "timestamp": "2016-05-21 13:10:00",
+        "day": "Sat",
+        "previous_interval": 80.0,
+        "rolling_1h_mean": 196.7,
+        "rolling_6h_mean": 269.7,
+        "predicted_wh": 104.02,
+        "actual_wh": 550.0,
+        "error_wh": 446.0
+      }
+    ],
+    "notes": [
+      "10 of the 10 largest errors are intervals where actual use was HIGHER than predicted.",
+      "The model sees only these inputs, all from BEFORE the predicted interval: previous_interval, rolling_1h_mean, rolling_6h_mean.",
+      "It cannot see: which appliance was switched on, how many people were home, cooking/laundry/visitor schedules, or meter errors.",
+      "Sudden switch-on events cannot be predicted from the past alone, so the first interval of a spike is always hard.",
+      "We do not claim causes for these errors."
+    ]
+  },
+  "feature_selection": {
     "Linear Regression": {
-      "MAE_kwh": 4.64,
-      "RMSE_kwh": 7.69
+      "selected": [
+        "previous_interval",
+        "rolling_1h_mean",
+        "lights_previous_interval"
+      ],
+      "steps": [
+        {
+          "added": "previous_interval",
+          "validation_MAE_wh": 26.77
+        },
+        {
+          "added": "rolling_1h_mean",
+          "validation_MAE_wh": 26.3
+        },
+        {
+          "added": "lights_previous_interval",
+          "validation_MAE_wh": 26.04
+        }
+      ]
     },
     "Random Forest": {
-      "MAE_kwh": 4.21,
-      "RMSE_kwh": 7.26
+      "selected": [
+        "previous_interval"
+      ],
+      "steps": [
+        {
+          "added": "previous_interval",
+          "validation_MAE_wh": 26.84
+        }
+      ]
     },
     "Gradient Boosting": {
-      "MAE_kwh": 4.27,
-      "RMSE_kwh": 7.28
+      "selected": [
+        "previous_interval",
+        "rolling_1h_mean",
+        "rolling_6h_mean"
+      ],
+      "steps": [
+        {
+          "added": "previous_interval",
+          "validation_MAE_wh": 26.82
+        },
+        {
+          "added": "rolling_1h_mean",
+          "validation_MAE_wh": 26.27
+        },
+        {
+          "added": "rolling_6h_mean",
+          "validation_MAE_wh": 26.02
+        }
+      ]
     }
   },
-  "injection_test": {
-    "Random Forest - pattern features (used)": {
-      "events": 30,
-      "hours_per_event": 12,
-      "increase": "+25%",
-      "injected_hours_flagged_pct": 48.8,
-      "events_with_at_least_one_flag": 22,
-      "flags_on_untouched_hours": 211
+  "tree_model_investigation": {
+    "overfitting_train_vs_validation": {
+      "Linear Regression": {
+        "default_params_all_candidate_features": {
+          "train": {
+            "MAE_wh": 31.64,
+            "RMSE_wh": 68.21
+          },
+          "validation": {
+            "MAE_wh": 27.15,
+            "RMSE_wh": 61.32
+          }
+        },
+        "tuned_selected_features": {
+          "train": {
+            "MAE_wh": 30.87,
+            "RMSE_wh": 69.06
+          },
+          "validation": {
+            "MAE_wh": 26.04,
+            "RMSE_wh": 61.88
+          }
+        }
+      },
+      "Random Forest": {
+        "default_params_all_candidate_features": {
+          "train": {
+            "MAE_wh": 19.67,
+            "RMSE_wh": 45.0
+          },
+          "validation": {
+            "MAE_wh": 32.91,
+            "RMSE_wh": 64.78
+          }
+        },
+        "tuned_selected_features": {
+          "train": {
+            "MAE_wh": 30.42,
+            "RMSE_wh": 67.45
+          },
+          "validation": {
+            "MAE_wh": 26.81,
+            "RMSE_wh": 60.89
+          }
+        }
+      },
+      "Gradient Boosting": {
+        "default_params_all_candidate_features": {
+          "train": {
+            "MAE_wh": 28.6,
+            "RMSE_wh": 61.49
+          },
+          "validation": {
+            "MAE_wh": 37.97,
+            "RMSE_wh": 75.07
+          }
+        },
+        "tuned_selected_features": {
+          "train": {
+            "MAE_wh": 27.89,
+            "RMSE_wh": 61.01
+          },
+          "validation": {
+            "MAE_wh": 25.9,
+            "RMSE_wh": 59.44
+          }
+        }
+      }
     },
-    "Random Forest - all features incl. previous hour": {
-      "events": 30,
-      "hours_per_event": 12,
-      "increase": "+25%",
-      "injected_hours_flagged_pct": 33.7,
-      "events_with_at_least_one_flag": 29,
-      "flags_on_untouched_hours": 192
+    "feature_scaling": {
+      "linear_regression_unscaled": {
+        "MAE_wh": 26.49,
+        "RMSE_wh": 61.8
+      },
+      "linear_regression_standard_scaled": {
+        "MAE_wh": 26.49,
+        "RMSE_wh": 61.8
+      },
+      "note": "Scaling does not change plain linear regression or tree predictions; trees split on thresholds."
+    },
+    "lag_feature_quality": {
+      "previous_interval": {
+        "corr_with_target_train": 0.76,
+        "corr_with_target_validation": 0.741,
+        "validation_MAE_if_used_as_prediction": 26.16
+      },
+      "previous_hour": {
+        "corr_with_target_train": 0.329,
+        "corr_with_target_validation": 0.27,
+        "validation_MAE_if_used_as_prediction": 51.74
+      },
+      "previous_day_same_time": {
+        "corr_with_target_train": 0.208,
+        "corr_with_target_validation": 0.224,
+        "validation_MAE_if_used_as_prediction": 53.32
+      },
+      "rolling_1h_mean": {
+        "corr_with_target_train": 0.594,
+        "corr_with_target_validation": 0.545,
+        "validation_MAE_if_used_as_prediction": 36.76
+      },
+      "rolling_6h_mean": {
+        "corr_with_target_train": 0.378,
+        "corr_with_target_validation": 0.34,
+        "validation_MAE_if_used_as_prediction": 46.99
+      },
+      "rolling_24h_mean": {
+        "corr_with_target_train": 0.156,
+        "corr_with_target_validation": 0.161,
+        "validation_MAE_if_used_as_prediction": 51.72
+      }
+    },
+    "leakage_check": {
+      "passed": true,
+      "timestamps_tested": 20,
+      "method": "all measurements at and after t were changed; every feature at t stayed identical"
+    },
+    "distribution_shift": {
+      "train": {
+        "rows": 13670,
+        "mean_wh": 98.7,
+        "median_wh": 60.0,
+        "std_wh": 106.8,
+        "p95_wh": 340.0,
+        "share_above_300_wh": 0.063,
+        "mean_outdoor_temp_c": 5.7
+      },
+      "validation": {
+        "rows": 2960,
+        "mean_wh": 93.4,
+        "median_wh": 60.0,
+        "std_wh": 92.3,
+        "p95_wh": 290.0,
+        "share_above_300_wh": 0.0429,
+        "mean_outdoor_temp_c": 8.2
+      },
+      "test": {
+        "rows": 2961,
+        "mean_wh": 96.9,
+        "median_wh": 60.0,
+        "std_wh": 90.9,
+        "p95_wh": 280.0,
+        "share_above_300_wh": 0.0439,
+        "mean_outdoor_temp_c": 14.5
+      }
     }
   },
-  "anomaly_detection": {
-    "rule": "residual >= 95th percentile of positive test residuals",
-    "threshold_kwh": 40.89,
-    "positive_residual_hours": 4553,
-    "flagged_hours": 228,
-    "flagged_periods": 49
+  "hyperparameter_grids": {
+    "Linear Regression": [
+      {
+        "params": {},
+        "train": {
+          "MAE_wh": 30.87,
+          "RMSE_wh": 69.06
+        },
+        "validation": {
+          "MAE_wh": 26.04,
+          "RMSE_wh": 61.88
+        }
+      }
+    ],
+    "Random Forest": [
+      {
+        "params": {
+          "max_depth": null,
+          "min_samples_leaf": 5,
+          "max_features": 1.0
+        },
+        "train": {
+          "MAE_wh": 30.33,
+          "RMSE_wh": 67.08
+        },
+        "validation": {
+          "MAE_wh": 26.84,
+          "RMSE_wh": 61.26
+        }
+      },
+      {
+        "params": {
+          "max_depth": null,
+          "min_samples_leaf": 5,
+          "max_features": 0.5
+        },
+        "train": {
+          "MAE_wh": 30.33,
+          "RMSE_wh": 67.08
+        },
+        "validation": {
+          "MAE_wh": 26.84,
+          "RMSE_wh": 61.26
+        }
+      },
+      {
+        "params": {
+          "max_depth": null,
+          "min_samples_leaf": 25,
+          "max_features": 1.0
+        },
+        "train": {
+          "MAE_wh": 30.42,
+          "RMSE_wh": 67.45
+        },
+        "validation": {
+          "MAE_wh": 26.81,
+          "RMSE_wh": 60.89
+        }
+      },
+      {
+        "params": {
+          "max_depth": null,
+          "min_samples_leaf": 25,
+          "max_features": 0.5
+        },
+        "train": {
+          "MAE_wh": 30.42,
+          "RMSE_wh": 67.45
+        },
+        "validation": {
+          "MAE_wh": 26.81,
+          "RMSE_wh": 60.89
+        }
+      },
+      {
+        "params": {
+          "max_depth": 10,
+          "min_samples_leaf": 5,
+          "max_features": 1.0
+        },
+        "train": {
+          "MAE_wh": 30.33,
+          "RMSE_wh": 67.08
+        },
+        "validation": {
+          "MAE_wh": 26.84,
+          "RMSE_wh": 61.25
+        }
+      },
+      {
+        "params": {
+          "max_depth": 10,
+          "min_samples_leaf": 5,
+          "max_features": 0.5
+        },
+        "train": {
+          "MAE_wh": 30.33,
+          "RMSE_wh": 67.08
+        },
+        "validation": {
+          "MAE_wh": 26.84,
+          "RMSE_wh": 61.25
+        }
+      },
+      {
+        "params": {
+          "max_depth": 10,
+          "min_samples_leaf": 25,
+          "max_features": 1.0
+        },
+        "train": {
+          "MAE_wh": 30.42,
+          "RMSE_wh": 67.45
+        },
+        "validation": {
+          "MAE_wh": 26.81,
+          "RMSE_wh": 60.89
+        }
+      },
+      {
+        "params": {
+          "max_depth": 10,
+          "min_samples_leaf": 25,
+          "max_features": 0.5
+        },
+        "train": {
+          "MAE_wh": 30.42,
+          "RMSE_wh": 67.45
+        },
+        "validation": {
+          "MAE_wh": 26.81,
+          "RMSE_wh": 60.89
+        }
+      }
+    ],
+    "Gradient Boosting": [
+      {
+        "params": {
+          "learning_rate": 0.05,
+          "max_depth": 2
+        },
+        "train": {
+          "MAE_wh": 29.93,
+          "RMSE_wh": 66.41
+        },
+        "validation": {
+          "MAE_wh": 26.38,
+          "RMSE_wh": 60.24
+        }
+      },
+      {
+        "params": {
+          "learning_rate": 0.05,
+          "max_depth": 3
+        },
+        "train": {
+          "MAE_wh": 29.1,
+          "RMSE_wh": 64.08
+        },
+        "validation": {
+          "MAE_wh": 26.02,
+          "RMSE_wh": 59.61
+        }
+      },
+      {
+        "params": {
+          "learning_rate": 0.05,
+          "max_depth": 4
+        },
+        "train": {
+          "MAE_wh": 27.89,
+          "RMSE_wh": 61.01
+        },
+        "validation": {
+          "MAE_wh": 25.9,
+          "RMSE_wh": 59.44
+        }
+      },
+      {
+        "params": {
+          "learning_rate": 0.1,
+          "max_depth": 2
+        },
+        "train": {
+          "MAE_wh": 29.47,
+          "RMSE_wh": 65.19
+        },
+        "validation": {
+          "MAE_wh": 26.31,
+          "RMSE_wh": 59.94
+        }
+      },
+      {
+        "params": {
+          "learning_rate": 0.1,
+          "max_depth": 3
+        },
+        "train": {
+          "MAE_wh": 28.29,
+          "RMSE_wh": 61.85
+        },
+        "validation": {
+          "MAE_wh": 26.13,
+          "RMSE_wh": 59.82
+        }
+      },
+      {
+        "params": {
+          "learning_rate": 0.1,
+          "max_depth": 4
+        },
+        "train": {
+          "MAE_wh": 26.51,
+          "RMSE_wh": 57.42
+        },
+        "validation": {
+          "MAE_wh": 26.64,
+          "RMSE_wh": 60.93
+        }
+      }
+    ]
   }
 }

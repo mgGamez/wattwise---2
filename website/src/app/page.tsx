@@ -7,6 +7,7 @@ import { Logo } from "@/components/AppShell";
 import { IconArrowRight, IconBolt, IconCheck, IconInsights, IconShield } from "@/components/icons";
 import { SPRING, useReduceMotion } from "@/components/motion";
 import { buttonClass } from "@/components/ui";
+import { enableSound, playLatch, playWhoosh } from "@/lib/sounds";
 
 const FRAMES = ["/landing/frame-1.jpg", "/landing/frame-2.jpg", "/landing/frame-3.jpg", "/landing/frame-4.jpg"];
 // "Analyze now" as drawn in frame 4 (fractions of the image), so the real button sits on top of it
@@ -26,7 +27,22 @@ export default function Landing() {
   const hint = useTransform(scrollYProgress, [0, 0.12], [1, 0]);
   const opacities = [o1, o2, o3, o4];
   const [open, setOpen] = useState(false);
-  useMotionValueEvent(scrollYProgress, "change", (v) => setOpen(v > 0.74));
+  const [sound, setSound] = useState(false);
+  const last = useRef(0);
+  useMotionValueEvent(scrollYProgress, "change", (v) => {
+    setOpen(v > 0.74);
+    // latch as the door unlocks, whoosh as it swings (only when scrolling forward)
+    if (sound && last.current < 0.22 && v >= 0.22) playLatch();
+    if (sound && last.current < 0.45 && v >= 0.45) playWhoosh();
+    last.current = v;
+  });
+  const toggleSound = () => {
+    if (sound) return setSound(false);
+    if (enableSound()) {
+      setSound(true);
+      playLatch();
+    }
+  };
   const showButton = reduce || open;
 
   return (
@@ -35,9 +51,23 @@ export default function Landing() {
         <Link href="/" aria-label="WATTWISE home">
           <Logo />
         </Link>
-        <Link href="/overview/" className={buttonClass("secondary", "sm")}>
-          Open app
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleSound}
+            aria-pressed={sound}
+            aria-label={sound ? "Turn door sounds off" : "Turn door sounds on"}
+            className="tap grid size-10 cursor-pointer place-items-center rounded-full bg-surface/80 text-ink-2 backdrop-blur transition-colors hover:text-ink"
+          >
+            <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+              {sound ? <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /> : <path d="m16 9.5 5 5m0-5-5 5" />}
+            </svg>
+          </button>
+          <Link href="/overview/" className={buttonClass("secondary", "sm")}>
+            Open app
+          </Link>
+        </div>
       </header>
 
       {/* ---------------- scroll-animated fridge */}

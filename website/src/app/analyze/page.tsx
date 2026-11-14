@@ -14,7 +14,7 @@ import { analyseBill, daysInMonth, MIN_HISTORY, monthIndex, type Bill } from "@/
 import demoBills from "@/data/demo-bills.json";
 import { saveAnalysis, toggleAction, useAppState, type Analysis } from "@/lib/storage";
 
-const MAX_HISTORY = 12;
+const MAX_HISTORY = 24; // two years, so last year's same month (seasons) can be included
 
 const fromIndex = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
 const previousMonth = () => {
@@ -47,7 +47,7 @@ function Analyze() {
   const [kwhText, setKwhText] = useState("");
   const [billDays, setBillDays] = useState<number | null>(null); // null = calendar days of the month
   const [rows, setRows] = useState<Record<string, Row>>({});
-  const [showAll, setShowAll] = useState(false);
+  const [showCount, setShowCount] = useState(6);
   const [demo, setDemo] = useState(false);
   const [step, setStep] = useState(1);
   const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
@@ -61,7 +61,7 @@ function Analyze() {
   const days = billDays ?? (monthValid ? daysInMonth(month) : 30);
   const kwh = parseKwh(kwhText);
 
-  // the 12 months before the bill, newest first
+  // the 24 months before the bill, newest first
   const priorMonths = useMemo(
     () => (monthValid ? Array.from({ length: MAX_HISTORY }, (_, i) => fromIndex(monthIndex(month) - 1 - i)) : []),
     [month, monthValid],
@@ -168,6 +168,7 @@ function Analyze() {
   };
 
   const analyzeNext = () => {
+    setShowCount(6);
     setMonth(fromIndex(monthIndex(month) + 1));
     setKwhText("");
     setBillDays(null);
@@ -180,7 +181,11 @@ function Analyze() {
     window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
   };
 
-  const visibleMonths = showAll ? priorMonths : priorMonths.slice(0, 6);
+  const yearAgo = monthValid ? fromIndex(monthIndex(month) - 12) : "";
+  const hasYearAgo = history.some((b) => b.month === yearAgo);
+  // always show enough rows to reach any month that already has a value
+  const filledDepth = priorMonths.reduce((d, m, i) => ((rows[m]?.kwh ?? "").trim() ? i + 1 : d), 0);
+  const visibleMonths = priorMonths.slice(0, Math.max(showCount, filledDepth));
 
   return (
     <div className="space-y-8">
@@ -283,8 +288,8 @@ function Analyze() {
           onOpen={() => setStep(3)}
         >
           <p className="text-sm leading-relaxed text-ink-2">
-            WATTWISE learns what’s normal for <strong className="text-ink">you</strong> from earlier bills. Enter at least {MIN_HISTORY} months (more is better; from 6
-            months it also learns your trend). Saved bills fill in automatically.
+            WATTWISE learns what’s normal for <strong className="text-ink">you</strong> from earlier bills. Enter at least {MIN_HISTORY} months. More is better: from 6
+            months it learns your trend, and with last year’s same month it accounts for seasons. Saved bills fill in automatically.
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {visibleMonths.map((m) => {
@@ -305,10 +310,21 @@ function Analyze() {
               );
             })}
           </div>
-          {!showAll && (
-            <button type="button" onClick={() => setShowAll(true)} className="mt-3 cursor-pointer text-sm font-semibold text-blue underline-offset-4 hover:underline">
-              Show 6 more months
+          {visibleMonths.length < priorMonths.length && (
+            <button
+              type="button"
+              onClick={() => setShowCount(visibleMonths.length < 12 ? 12 : MAX_HISTORY)}
+              className="mt-3 cursor-pointer text-sm font-semibold text-blue underline-offset-4 hover:underline"
+            >
+              {visibleMonths.length < 12 ? "Show up to 12 months" : `Show up to 24 months (includes ${monthName(yearAgo)})`}
             </button>
+          )}
+          {monthValid && (
+            <p className={`mt-3 rounded-2xl px-4 py-3 text-sm ${hasYearAgo ? "bg-sage-soft text-sage-strong" : "bg-sunken text-ink-2"}`}>
+              {hasYearAgo
+                ? `${monthName(yearAgo)} is included, so WATTWISE will account for seasons (heating and cooling).`
+                : `Tip: add your bill from ${monthName(yearAgo)} so WATTWISE can account for seasons. Without it, a hot or cold month can look unusual.`}
+            </p>
           )}
           <p className={`mt-3 text-sm ${badRows.length ? "text-danger" : history.length >= MIN_HISTORY ? "text-sage-strong" : "text-ink-3"}`}>
             {badRows.length

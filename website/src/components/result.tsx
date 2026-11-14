@@ -180,6 +180,7 @@ function ConversionTable({ data }: { data: ResultData }) {
 function HistoryChart({ data }: { data: ResultData }) {
   const reduce = useReduceMotion();
   const r = data.result;
+  const yearAgoMonth = r.fit.seasonal?.month;
   const pts = [...data.history].sort((a, b) => a.month.localeCompare(b.month)).map((b) => ({ month: b.month, perDay: b.kwh / b.days, current: false }));
   pts.push({ month: data.month, perDay: r.actualPerDay, current: true });
   const lo = Math.max(0, r.expectedPerDay - 2 * r.fit.sigma);
@@ -195,7 +196,9 @@ function HistoryChart({ data }: { data: ResultData }) {
           {pts.map((p, i) => (
             <div key={p.month} className="flex h-full flex-1 flex-col items-center justify-end">
               <motion.div
-                className={`w-full max-w-12 origin-bottom rounded-t-lg ${p.current ? (r.flagged ? "bg-amber-bright" : r.low ? "bg-blue-bright" : "bg-ink") : "bg-ink-3/45"}`}
+                className={`w-full max-w-12 origin-bottom rounded-t-lg ${
+                  p.current ? (r.flagged ? "bg-amber-bright" : r.low ? "bg-blue-bright" : "bg-ink") : p.month === yearAgoMonth ? "bg-blue-bright/60 ring-2 ring-blue" : "bg-ink-3/45"
+                }`}
                 style={{ height: `${100 - y(p.perDay)}%` }}
                 initial={reduce ? false : { scaleY: 0 }}
                 animate={{ scaleY: 1 }}
@@ -223,6 +226,11 @@ function HistoryChart({ data }: { data: ResultData }) {
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-sage-soft ring-1 ring-sage/30" /> Normal range ({k1(lo)}–{k1(hi)})
         </span>
+        {yearAgoMonth && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2.5 rounded-sm bg-blue-bright/60 ring-2 ring-blue" /> Same month last year ({monthShort(yearAgoMonth)})
+          </span>
+        )}
       </figcaption>
     </figure>
   );
@@ -237,8 +245,9 @@ function WhyPanel({ data }: { data: ResultData }) {
         Why this result?
       </h3>
       <p className="mt-1.5 text-sm leading-relaxed text-ink-2">
-        WATTWISE learned your normal from your {f.n} past bills ({f.method === "trend" ? "a trend line" : "their average"}), then checked whether{" "}
-        {monthName(data.month)} falls inside your usual range.
+        WATTWISE learned your normal from your {f.n} past bills (
+        {f.method === "seasonal" ? `the same month last year, adjusted for your recent level` : f.method === "trend" ? "a trend line" : "their average"}), then
+        checked whether {monthName(data.month)} falls inside your usual range.
       </p>
       <div className="mt-6">
         <HistoryChart data={data} />
@@ -529,10 +538,13 @@ export function ResultView({
             ))}
         </ul>
         <p className="mt-4 text-sm leading-relaxed text-ink-2">
-          {r.fit.method === "trend"
-            ? `With ${r.fit.n} months of history, WATTWISE fitted a trend line to your daily use (least squares) and extended it to ${monthName(data.month)}.`
-            : `With ${r.fit.n} months of history, WATTWISE uses your average daily use. From 6 months on, it also learns your trend.`}{" "}
-          A bill is flagged when it’s at least 2× your usual variation (±{k1(r.fit.sigma)} kWh/day) above expected. Everything ran in this browser.
+          {r.fit.method === "seasonal" && r.fit.seasonal
+            ? `WATTWISE compared against ${monthName(r.fit.seasonal.month)}, scaled by how your last 3 months compare with a year earlier (×${r.fit.seasonal.levelRatio.toFixed(2)}).`
+            : r.fit.method === "trend"
+              ? `With ${r.fit.n} months of history, WATTWISE fitted a trend line to your daily use (least squares) and extended it to ${monthName(data.month)}. Add last year’s same month to account for seasons.`
+              : `With ${r.fit.n} months of history, WATTWISE uses your average daily use. From 6 months it learns your trend, and with last year’s same month it accounts for seasons.`}{" "}
+          Usual variation is ±{k1(r.fit.sigma)} kWh/day: your bills’ own spread, blended with a typical 10% household variation when there are few bills, and widened
+          for a short history. A bill is flagged at 2× that above expected. Everything ran in this browser.
         </p>
       </section>
 

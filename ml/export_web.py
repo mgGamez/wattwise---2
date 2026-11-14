@@ -59,9 +59,19 @@ def main():
     data = model_ready(feats, columns_for(CANDIDATES))
     train_end, test_start = pd.Timestamp(metrics["train_period"][1]), pd.Timestamp(metrics["test_period"][0])
     train, test = data[data.index <= train_end], data[data.index >= test_start]
+    val = data[(data.index > train_end) & (data.index < test_start)]
+    # ALL validation residuals (positive and negative): lets the app say where any
+    # reading sits, including readings below what the model expected.
+    val_residuals = np.sort((val[TARGET] - model.predict(val[features])).to_numpy(dtype=float))
 
     ref = np.sort(np.asarray(bundle["reference_positive_residuals"], dtype=float))
+    assert np.allclose(ref, np.sort(val_residuals[val_residuals > 0])), "validation residuals mismatch"
     threshold = float(bundle["threshold_wh"])
+
+    val_rounded = np.array([round(v, 6) for v in val_residuals.tolist()])
+
+    def position(residual):
+        return float(np.searchsorted(val_rounded, residual, side="right") / len(val_rounded) * 100)
 
     def percentile(residual):
         if residual <= 0:
@@ -86,6 +96,7 @@ def main():
             "rule": metrics["anomaly_methodology"]["threshold_rule"],
             "thresholdWh": threshold,
             "referencePositiveResiduals": ref.tolist(),
+            "referenceAllResiduals": [round(v, 6) for v in val_residuals.tolist()],
         },
         "trainedOn": bundle["trained_on"],
     }
@@ -111,6 +122,7 @@ def main():
             "pythonResidualWh": residual,
             "pythonPercentile": percentile(residual),
             "pythonFlagged": bool(residual >= threshold),
+            "pythonPosition": position(residual),
         }
 
     # ---- demo samples: chosen by rules over the real test predictions

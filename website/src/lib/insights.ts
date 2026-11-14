@@ -71,7 +71,8 @@ export function checksProgress(analyses: Analysis[], checks: Record<string, Reco
   return { total, done };
 }
 
+/** unusual = flagged (top 5% of positive surprises); below = bottom 5% of validation residuals. */
 export function statusOf(a: Analysis): "unusual" | "normal" | "below" {
   if (a.result.flagged) return "unusual";
-  return a.result.residualWh < 0 ? "below" : "normal";
+  return a.result.residualWh < 0 && a.result.position != null && a.result.position < 5 ? "below" : "normal";
 }

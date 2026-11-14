@@ -13,7 +13,9 @@ const MAX_READINGS = 6000; // cap on remembered 10-minute readings (~41 days)
 
 export type BuildingType = "home" | "apartment" | "office" | "small-business" | "other";
 export type CurrencyCode = "INR" | "USD" | "EUR" | "GBP" | "AUD" | "CAD" | "SGD" | "AED";
-export type ContextMethod = "saved-history" | "pasted-history" | "summary-values";
+/** summary-values = totals for the last hour / 6 hours entered by the user (converted to averages);
+ *  estimated-from-usage = averages derived from a monthly/daily total (assumes even use). */
+export type ContextMethod = "saved-history" | "pasted-history" | "summary-values" | "estimated-from-usage";
 
 export type ActionItem = {
   id: string;
@@ -40,7 +42,11 @@ export type Analysis = {
     /** residual counted as potential excess only when the reading is flagged as unusual */
     potentialExcessWh: number;
     outOfRange: string[];
+    /** % of validation intervals with a residual <= this one (works below expected too) */
+    position?: number | null;
   };
+  /** the model's own per-input contributions: expectedWh = base + Σ contributions */
+  explanation?: { base: number; contributions: Record<string, number> };
   model: { name: string; format: string; trees: number };
   actions: ActionItem[];
   pythonReference?: { expectedWh: number; percentile: number };

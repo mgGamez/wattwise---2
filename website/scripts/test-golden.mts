@@ -37,10 +37,18 @@ for (const c of golden.cases) {
   const r = analyse(model, c.actualWh, inputs);
   const diff = Math.abs(r.expectedWh - c.pythonExpectedWh);
   maxPredDiff = Math.max(maxPredDiff, diff);
+  // explanation must add up to the prediction; position must match Python
+  const explained = r.explanation.base + Object.values(r.explanation.contributions).reduce((s, v) => s + v, 0);
+  const explainOk = Math.abs(explained - r.expectedWh) < 1e-6;
+  const positionOk = c.pythonPosition === undefined || (r.position !== null && Math.abs(r.position - c.pythonPosition) < 1e-9);
+  if (!explainOk) console.log(`FAIL ${c.timestamp}: explanation sums to ${explained}, prediction ${r.expectedWh}`);
+  if (!positionOk) console.log(`FAIL ${c.timestamp}: position js=${r.position} py=${c.pythonPosition}`);
   const ok =
     diff <= golden.tolerance.expectedWh &&
     Math.abs(r.percentile - c.pythonPercentile) < 1e-9 &&
-    r.flagged === c.pythonFlagged;
+    r.flagged === c.pythonFlagged &&
+    explainOk &&
+    positionOk;
   if (!ok) failed++;
   console.log(
     `${ok ? "PASS" : "FAIL"} ${c.timestamp}  ${c.actualWh.toFixed(0).padStart(5)}   ${c.pythonExpectedWh.toFixed(6).padStart(14)}   ${r.expectedWh

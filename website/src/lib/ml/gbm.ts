@@ -32,7 +32,12 @@ export type ModelJson = {
   learningRate: number;
   trees: Tree[];
   trainingRange: Record<string, [number, number]>;
-  calibration: { rule: string; thresholdWh: number; referencePositiveResiduals: number[] };
+  calibration: {
+    rule: string;
+    thresholdWh: number;
+    referencePositiveResiduals: number[];
+    referenceAllResiduals?: number[];
+  };
   trainedOn: [string, string];
 };
 
@@ -52,6 +57,9 @@ export type Inference = {
   thresholdWh: number;
   outOfRange: string[];
   treesEvaluated: number;
+  /** % of validation intervals with a residual <= this one (null if not exported) */
+  position: number | null;
+  explanation: { base: number; contributions: Record<string, number> };
 };
 
 function leafValue(tree: Tree, x: number[]): number {
@@ -109,6 +117,47 @@ export function anomalyPercentile(model: ModelJson, residual: number): number {
   return (lo / ref.length) * 100;
 }
 
+/**
+ * Why the model predicted what it did: exact per-input contributions, traced
+ * through every tree (path attribution). At each split on the decision path,
+ * the change in the node's mean value is credited to the input that was split on.
+ *   prediction = base + Σ contributions   (exactly, up to float rounding)
+ * `base` is what the model predicts before looking at any input (a typical interval).
+ */
+export function explain(model: ModelJson, inputs: ModelInputs): { base: number; contributions: Record<string, number> } {
+  const x = model.features.map((f) => inputs[f as keyof ModelInputs]);
+  const contributions: Record<string, number> = Object.fromEntries(model.features.map((f) => [f, 0]));
+  let base = model.init;
+  for (const tree of model.trees) {
+    let node = 0;
+    base += model.learningRate * tree.value[0];
+    while (tree.left[node] !== -1) {
+      const f = model.features[tree.feature[node]];
+      const next = Math.fround(x[tree.feature[node]]) <= tree.threshold[node] ? tree.left[node] : tree.right[node];
+      contributions[f] += model.learningRate * (tree.value[next] - tree.value[node]);
+      node = next;
+    }
+  }
+  return { base, contributions };
+}
+
+/**
+ * Share (0–100) of validation intervals whose residual was <= this residual.
+ * Works for readings below expected too (e.g. 3 = lower than 97% of intervals).
+ */
+export function residualPosition(model: ModelJson, residual: number): number | null {
+  const ref = model.calibration.referenceAllResiduals;
+  if (!ref?.length) return null;
+  let lo = 0;
+  let hi = ref.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (ref[mid] <= residual) lo = mid + 1;
+    else hi = mid;
+  }
+  return (lo / ref.length) * 100;
+}
+
 /** Full analysis of one interval. */
 export function analyse(model: ModelJson, actualWh: number, inputs: ModelInputs): Inference {
   if (!Number.isFinite(actualWh) || actualWh < 0) throw new Error("Actual reading must be a non-negative number");
@@ -129,5 +178,7 @@ export function analyse(model: ModelJson, actualWh: number, inputs: ModelInputs)
     thresholdWh,
     outOfRange,
     treesEvaluated: model.trees.length,
+    position: residualPosition(model, residualWh),
+    explanation: explain(model, inputs),
   };
 }

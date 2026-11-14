@@ -82,7 +82,7 @@ export default function Overview() {
           <div className="mt-5 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 flex-1">
               <h2 className="text-2xl font-bold leading-tight text-ink">
-                {lr.flagged ? "Unusual consumption found" : "This reading looked normal"}
+                {lr.flagged ? "Unusual consumption found" : statusOf(latest) === "below" ? "Much lower than expected" : "This reading looked normal"}
               </h2>
               <p className="mt-1 text-sm text-ink-3">{fmtWhen(latest.timestamp)}</p>
               <div className="mt-6 flex items-end gap-8">
@@ -105,7 +105,7 @@ export default function Overview() {
                 <MiniCompare actual={latest.actualWh} expected={lr.expectedWh} flagged={lr.flagged} />
               </div>
             </div>
-            <PercentileRing percentile={lr.percentile} flagged={lr.flagged} size={128} />
+            <PercentileRing data={latest} size={128} />
           </div>
           <Link
             href={`/analysis/?id=${latest.id}`}

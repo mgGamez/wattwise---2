@@ -15,6 +15,8 @@ import { site } from "@/lib/data";
 import { fmtNum } from "@/lib/money";
 import { saveAnalysis, toggleAction, useAppState, type Analysis, type ContextMethod } from "@/lib/storage";
 import { addMinutes, floorTo10, fmtInterval, fmtWhen, isValidLocal, nowLocal } from "@/lib/time";
+import { fmtBoth, fmtEnergy, intervalFromTotal } from "@/lib/units";
+import { UsageConverter } from "@/components/converter";
 
 const HISTORY = 36;
 
@@ -59,7 +61,9 @@ function Analyze() {
   const [actualText, setActualText] = useState("");
   const [mode, setMode] = useState<ContextMethod>("saved-history");
   const [pasteText, setPasteText] = useState("");
+  // totals as people know them: the previous 10 minutes, the whole last hour, the whole last 6 hours
   const [summary, setSummary] = useState({ prev: "", h1: "", h6: "" });
+  const [usage, setUsage] = useState<{ amount: string; period: "month" | "day" }>({ amount: "", period: "month" });
   const [demo, setDemo] = useState<DemoSample | null>(null);
   const [step, setStep] = useState(1);
   const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
@@ -87,15 +91,33 @@ function Analyze() {
 
   const pasted = useMemo(() => parseList(pasteText).map((v) => (v === null ? null : v * scale)), [pasteText, scale]);
 
-  const inputs: ModelInputs | null = useMemo(() => {
-    if (mode === "saved-history") return inputsFromHistory(savedHistory, HISTORY);
-    if (mode === "pasted-history") return inputsFromHistory(pasted, HISTORY);
+  // Totals -> the model's per-10-minute averages (1 hour = 6 intervals, 6 hours = 36).
+  const summaryCheck = useMemo((): { inputs: ModelInputs | null; error: string | null } => {
     const p = parseNumber(summary.prev);
     const h1 = parseNumber(summary.h1);
     const h6 = parseNumber(summary.h6);
-    if (p === null || h1 === null || h6 === null || p < 0 || h1 < 0 || h6 < 0) return null;
-    return { previous_interval: p * scale, rolling_1h_mean: h1 * scale, rolling_6h_mean: h6 * scale };
-  }, [mode, savedHistory, pasted, summary, scale]);
+    if (p === null || h1 === null || h6 === null) return { inputs: null, error: null };
+    if (p < 0 || h1 < 0 || h6 < 0) return { inputs: null, error: "Values can’t be negative." };
+    if (h1 + 1e-9 < p)
+      return { inputs: null, error: "The last-hour total includes the previous 10 minutes, so it can’t be smaller than that reading." };
+    if (h6 + 1e-9 < h1) return { inputs: null, error: "The 6-hour total includes the last hour, so it can’t be smaller than the last-hour total." };
+    return { inputs: { previous_interval: p * scale, rolling_1h_mean: (h1 * scale) / 6, rolling_6h_mean: (h6 * scale) / 36 }, error: null };
+  }, [summary, scale]);
+
+  const usagePerInterval = useMemo(() => {
+    const v = parseNumber(usage.amount);
+    return v !== null && v > 0 ? intervalFromTotal(v, usage.period) : null;
+  }, [usage]);
+
+  const inputs: ModelInputs | null = useMemo(() => {
+    if (mode === "saved-history") return inputsFromHistory(savedHistory, HISTORY);
+    if (mode === "pasted-history") return inputsFromHistory(pasted, HISTORY);
+    if (mode === "estimated-from-usage")
+      return usagePerInterval === null
+        ? null
+        : { previous_interval: usagePerInterval, rolling_1h_mean: usagePerInterval, rolling_6h_mean: usagePerInterval };
+    return summaryCheck.inputs;
+  }, [mode, savedHistory, pasted, summaryCheck, usagePerInterval]);
 
   const signature = JSON.stringify([when, actualWh, inputs]);
   const stale = result !== null && result.signature !== signature;
@@ -167,6 +189,7 @@ function Analyze() {
         thresholdWh: inf.thresholdWh,
         potentialExcessWh: inf.flagged ? inf.residualWh : 0,
         outOfRange: inf.outOfRange,
+        position: inf.position,
       };
       const actions = suggestActions({ timestamp: when, result: res }, state.profile.buildingType, state.analyses);
       setStage(3);
@@ -180,6 +203,7 @@ function Analyze() {
         contextMethod: mode,
         inputs: inf.inputs,
         result: res,
+        explanation: inf.explanation,
         model: { name: model.modelName, format: model.format, trees: inf.treesEvaluated },
         actions,
         pythonReference: demo ? demo.pythonReference : undefined,
@@ -353,8 +377,23 @@ function Analyze() {
             <span className="text-lg font-semibold text-ink-3">{unit}</span>
           </div>
           <p className={`mt-2 text-sm ${actualText && !actualValid ? "text-danger" : "text-ink-3"}`}>
-            {actualText && !actualValid ? "Enter a number of zero or more." : "Your meter’s reading for these 10 minutes."}
+            {actualText && !actualValid
+              ? "Enter a number of zero or more."
+              : "The energy your meter recorded in these 10 minutes only, not a daily or monthly total."}
           </p>
+          {actualValid && actualWh !== null && (
+            <p className="mt-2 rounded-2xl bg-sunken px-4 py-3 text-sm leading-relaxed text-ink-2">
+              <strong className="text-ink">{fmtBoth(actualWh)}</strong> in 10 minutes. If use stayed at this rate, that’s{" "}
+              <span className="num">{fmtEnergy(actualWh * 6)}</span> per hour, <span className="num">{fmtEnergy(actualWh * 144)}</span> per day or{" "}
+              <span className="num">{fmtEnergy(actualWh * 4320)}</span> per month.
+            </p>
+          )}
+          <details className="mt-3 rounded-2xl border border-line bg-canvas px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-semibold text-blue">Only know your monthly or daily use? Convert it</summary>
+            <div className="mt-3">
+              <UsageConverter value={usage} onChange={setUsage} />
+            </div>
+          </details>
           <StepNext disabled={!actualValid} onClick={() => setStep(3)} />
         </Step>
 
@@ -363,7 +402,7 @@ function Analyze() {
           title="Recent context"
           active={step === 3}
           done={step3Done && step !== 3}
-          summary={inputs ? `Previous ${fmtNum(inputs.previous_interval)} Wh · 1 h avg ${fmtNum(inputs.rolling_1h_mean, 1)} · 6 h avg ${fmtNum(inputs.rolling_6h_mean, 1)}` : ""}
+          summary={inputs ? `Previous 10 min ${fmtEnergy(inputs.previous_interval)} · last hour ${fmtEnergy(inputs.rolling_1h_mean * 6)} · last 6 h ${fmtEnergy(inputs.rolling_6h_mean * 36)}` : ""}
           onOpen={() => setStep(3)}
         >
           <p className="text-sm leading-relaxed text-ink-2">
@@ -378,7 +417,8 @@ function Analyze() {
               options={[
                 { value: "saved-history", label: `Saved (${savedFound}/36)` },
                 { value: "pasted-history", label: "Paste 36 readings" },
-                { value: "summary-values", label: "Summary values" },
+                { value: "summary-values", label: "Enter totals" },
+                { value: "estimated-from-usage", label: "From monthly/daily use" },
               ]}
             />
           </div>
@@ -430,16 +470,22 @@ function Analyze() {
             )}
 
             {mode === "summary-values" && (
+              <div>
+              <p className="mb-3 text-sm text-ink-2">
+                Enter the <strong className="text-ink">total energy</strong> used in each period before this interval. WATTWISE converts the totals to
+                per-10-minute averages for the model.
+              </p>
               <div className="grid gap-3 sm:grid-cols-3">
                 {(
                   [
-                    ["prev", "Previous 10-minute reading"],
-                    ["h1", "Average of the last hour"],
-                    ["h6", "Average of the last 6 hours"],
+                    ["prev", "Previous 10 minutes", "the 10 minutes just before"],
+                    ["h1", "Total for the last hour", "includes the previous 10 minutes"],
+                    ["h6", "Total for the last 6 hours", "includes the last hour"],
                   ] as const
-                ).map(([k, label]) => (
+                ).map(([k, label, hint]) => (
                   <label key={k} className="block">
                     <span className="text-sm font-semibold text-ink">{label}</span>
+                    <span className="block text-xs text-ink-3">{hint}</span>
                     <div className="mt-2 flex h-12 items-center rounded-2xl border border-line-strong bg-surface px-3 focus-within:border-blue">
                       <input
                         inputMode="decimal"
@@ -452,19 +498,41 @@ function Analyze() {
                   </label>
                 ))}
               </div>
+              {summaryCheck.error && (
+                <p role="alert" className="mt-3 text-sm text-danger">
+                  {summaryCheck.error}
+                </p>
+              )}
+              </div>
+            )}
+
+            {mode === "estimated-from-usage" && (
+              <div>
+                <p className="mb-3 text-sm leading-relaxed text-ink-2">
+                  No recent readings? Use your average from a bill or app. WATTWISE spreads it evenly over time, so the result is an{" "}
+                  <strong className="text-ink">estimate</strong> and less precise than real recent readings.
+                </p>
+                <UsageConverter value={usage} onChange={editField(setUsage)} />
+              </div>
             )}
           </div>
 
           {inputs && (
             <div className="mt-5 grid gap-2 sm:grid-cols-3">
-              {[
-                ["Previous 10 min", inputs.previous_interval],
-                ["Last hour avg", inputs.rolling_1h_mean],
-                ["Last 6 h avg", inputs.rolling_6h_mean],
-              ].map(([k, v]) => (
-                <div key={k as string} className="rounded-2xl border border-line bg-canvas px-4 py-3">
-                  <p className="text-xs font-semibold text-ink-3">{k as string} · model input</p>
-                  <p className="num text-lg font-bold text-ink">{fmtNum(v as number, (v as number) % 1 ? 1 : 0)} Wh</p>
+              {(
+                [
+                  ["Previous 10 minutes", inputs.previous_interval, 1],
+                  ["Last hour", inputs.rolling_1h_mean, 6],
+                  ["Last 6 hours", inputs.rolling_6h_mean, 36],
+                ] as const
+              ).map(([k, v, n]) => (
+                <div key={k} className="rounded-2xl border border-line bg-canvas px-4 py-3">
+                  <p className="text-xs font-semibold text-ink-3">{k}</p>
+                  <p className="num text-lg font-bold text-ink">
+                    {fmtEnergy(v * n)}
+                    {n > 1 ? " total" : ""}
+                  </p>
+                  {n > 1 && <p className="num text-xs text-ink-2">= {fmtEnergy(v)} per 10 min (model input)</p>}
                 </div>
               ))}
             </div>

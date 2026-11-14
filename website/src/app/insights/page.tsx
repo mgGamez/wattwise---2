@@ -5,7 +5,7 @@ import { BarChart, LineChart } from "@/components/charts";
 import { CATEGORY_ICON, IconArrowRight, IconFlask } from "@/components/icons";
 import { AnimatedNumber, EASE, SPRING, useReduceMotion } from "@/components/motion";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
-import { allTimeTotal, byHour, byReadingTime, checksProgress, periodTotals } from "@/lib/insights";
+import { allTimeTotal, byHour, byReadingTime, checksProgress, periodTotals, statusOf } from "@/lib/insights";
 import { costOf, fmtKwh, fmtMoney, fmtNum } from "@/lib/money";
 import { useAppState } from "@/lib/storage";
 import { fmtClock, fmtDay } from "@/lib/time";
@@ -186,7 +186,7 @@ export default function InsightsPage() {
                 <li
                   key={a.id}
                   title={labels[sorted.indexOf(a)]}
-                  className={`size-5 rounded-md ${a.result.flagged ? "bg-amber-bright" : a.result.residualWh < 0 ? "bg-blue-bright" : "bg-sage-bright"}`}
+                  className={`size-5 rounded-md ${statusOf(a) === "unusual" ? "bg-amber-bright" : statusOf(a) === "below" ? "bg-blue-bright" : "bg-sage-bright"}`}
                   aria-label={`${labels[sorted.indexOf(a)]}: ${a.result.flagged ? "unusual" : "normal"}`}
                 />
               ))}

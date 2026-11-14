@@ -9,14 +9,15 @@
     "prebuild": "node scripts/build-data.mjs",
     "build": "next build",
     "start": "npx serve out",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:golden": "node scripts/test-golden.mts",
+    "postbuild": "node scripts/fix-export-segments.mjs"
   },
   "dependencies": {
     "framer-motion": "14.14.0",
     "next": "16.4.6",
     "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "recharts": "3.10.1"
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.5",
@@ -25,5 +26,6 @@
     "@types/react-dom": "19.3.0",
     "tailwindcss": "4.3.5",
     "typescript": "5.9.3"
-  }
+  },
+  "type": "module"
 }

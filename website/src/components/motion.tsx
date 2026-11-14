@@ -1,96 +1,83 @@
 "use client";
 
-import { animate, motion, MotionConfig, useInView, useReducedMotion } from "framer-motion";
+import { animate, MotionConfig, useInView, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { fmtNum } from "@/lib/format";
+import { useAppState } from "@/lib/storage";
 
 export const EASE = [0.22, 1, 0.36, 1] as const;
+export const SPRING = { type: "spring", stiffness: 260, damping: 30, mass: 0.9 } as const;
 
 /**
- * Reduced-motion preference that is safe for static pre-rendering:
- * returns false on the server AND on the first client render (so hydration
- * matches), then the real preference after mount.
+ * True when motion should be reduced: the OS setting OR the in-app preference.
+ * Always false on the server and first client render, so hydration matches.
  */
-export function useReducedMotionSafe() {
-  const pref = useReducedMotion();
+export function useReduceMotion() {
+  const os = useReducedMotion();
+  const s = useAppState();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  return mounted && !!pref;
+  return mounted && (!!os || s?.preferences.motion === "reduced");
 }
 
-/** Global motion settings: respects the OS "reduce motion" preference. */
 export function MotionProvider({ children }: { children: ReactNode }) {
-  return <MotionConfig reducedMotion="user">{children}</MotionConfig>;
-}
-
-/** Fade + rise once when scrolled into view. */
-export function Reveal({
-  children,
-  delay = 0,
-  className,
-  as = "div",
-}: {
-  children: ReactNode;
-  delay?: number;
-  className?: string;
-  as?: "div" | "li" | "header";
-}) {
-  const Comp = motion[as];
-  return (
-    <Comp
-      className={className}
-      initial={{ opacity: 0, y: 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.25 }}
-      transition={{ duration: 0.6, ease: EASE, delay }}
-    >
-      {children}
-    </Comp>
-  );
+  const s = useAppState();
+  const reduced = s?.preferences.motion === "reduced";
+  useEffect(() => {
+    document.documentElement.dataset.reduceMotion = reduced ? "true" : "false";
+  }, [reduced]);
+  return <MotionConfig reducedMotion={s?.preferences.motion === "reduced" ? "always" : "user"}>{children}</MotionConfig>;
 }
 
 /**
- * Counts up to `value` the first time it scrolls into view.
- * Server HTML contains the final value, so the number is correct without JS
- * and with reduced motion.
+ * Number that animates to its new value (on mount and whenever it changes).
+ * The rendered text is always the correct final value; motion only affects the path there.
  */
-export function CountUp({
+export function AnimatedNumber({
   value,
-  digits = 0,
-  prefix = "",
-  suffix = "",
-  duration = 1.2,
+  format,
   className,
+  delay = 0,
 }: {
   value: number;
-  digits?: number;
-  prefix?: string;
-  suffix?: string;
-  duration?: number;
+  format: (v: number) => string;
   className?: string;
+  delay?: number;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, amount: 0.6 });
-  const reduce = useReducedMotion();
-  const text = (v: number) => `${prefix}${fmtNum(v, digits)}${suffix}`;
+  const inView = useInView(ref, { once: true, amount: 0.4 });
+  const reduce = useReduceMotion();
+  const from = useRef(0);
 
   useEffect(() => {
-    if (!inView || reduce || !ref.current) return;
     const node = ref.current;
-    const controls = animate(0, value, {
-      duration,
+    if (!node || !inView) return;
+    if (reduce) {
+      node.textContent = format(value);
+      from.current = value;
+      return;
+    }
+    const controls = animate(from.current, value, {
+      duration: 0.9,
+      delay,
       ease: EASE,
       onUpdate: (v) => {
-        node.textContent = text(v);
+        node.textContent = format(v);
+      },
+      onComplete: () => {
+        from.current = value;
       },
     });
-    return () => controls.stop();
+    return () => {
+      controls.stop();
+      from.current = value;
+      node.textContent = format(value);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inView, reduce, value]);
+  }, [value, inView, reduce]);
 
   return (
     <span ref={ref} className={className}>
-      {text(value)}
+      {format(value)}
     </span>
   );
 }

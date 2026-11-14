@@ -268,18 +268,23 @@ if (predictions && hero) {
   heroLine = { values: slice.map((p) => p.actual), focusIndex: i - start, start: slice[0].t, end: slice.at(-1).t };
 }
 
+// Only what the app's Learn page needs (research facts, two context observations,
+// three failure cases). Bulk arrays stay out of the client bundle.
+const strip = ({ context: _c, ...rest }) => rest;
 const site = {
   generatedAt: new Date().toISOString(),
   sources: status,
   warnings,
   model,
-  hero,
-  heroLine,
-  chart,
-  anomalies,
-  context,
-  failures,
+  context: context && {
+    highButNormal: context.highButNormal && strip(context.highButNormal),
+    lowButUnusual: context.lowButUnusual && strip(context.lowButUnusual),
+    usageRule: context.usageRule,
+  },
+  failures: failures && failures.map(strip),
+  anomalyCount: anomalies ? anomalies.length : null,
 };
+void hero; void heroLine; void chart;
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, JSON.stringify(site));

@@ -75,14 +75,11 @@ export type SiteData = {
   sources: Record<string, "ok" | "missing">;
   warnings: string[];
   model: ModelData | null;
-  hero: Anomaly | null;
-  heroLine: { values: number[]; focusIndex: number; start: string; end: string } | null;
-  chart: { rule: string; start: string; end: string; flaggedInWindow: number; points: Point[] } | null;
-  anomalies: Anomaly[] | null;
   context: {
-    highButNormal: ContextPoint | null;
-    lowButUnusual: ContextPoint | null;
+    highButNormal: Omit<ContextPoint, "context"> | null;
+    lowButUnusual: Omit<ContextPoint, "context"> | null;
     usageRule: { n: number; overlap: number; minUsageInRule: number | null; explanation: string };
   } | null;
-  failures: Failure[] | null;
+  failures: Omit<Failure, "context">[] | null;
+  anomalyCount: number | null;
 };

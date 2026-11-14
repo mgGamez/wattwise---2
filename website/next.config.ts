@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "export",
   images: { unoptimized: true },
+  // /analyze/index.html etc. — works on any static file server, including after refresh.
+  trailingSlash: true,
   reactStrictMode: true,
 };
 

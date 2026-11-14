@@ -73,10 +73,11 @@ ml/prepare_data.py   step 1: clean data      → data/processed/cleaned.csv, res
 ml/features.py       candidate features (all use only past data)
 ml/train.py          step 2: feature + model selection on validation, final test, anomalies, failure analysis
 ml/wattwise.py       reusable: predict_expected_usage(), analyse_consumption()
+ml/export_web.py     step 3: export the model, demo samples and golden cases for the app
 model/               saved model + validation-calibrated threshold
 results/             metrics.json, predictions.csv, anomalies.csv, failure_analysis.csv/.md, figures/
 docs/ML_EXPLAINED.md beginner-friendly explanation
-website/             Next.js site built from the real results (see below)
+website/             the WATTWISE app (Next.js, runs the real model in the browser)
 notebook/            (later)
 ```
 
@@ -88,6 +89,7 @@ python -m venv .venv
 pip install -r requirements.txt
 python ml/prepare_data.py
 python ml/train.py               # about 2 minutes
+python ml/export_web.py          # model + demo + golden files for the app
 ```
 
 ```python
@@ -101,19 +103,30 @@ all_intervals, anomalies = analyse_consumption(df["2016-05-06":])
 
 The first 24 hours of any input are used as history only and get no prediction.
 
-## Website
+## The WATTWISE app
 
-A static Next.js site (TypeScript, Tailwind CSS, Framer Motion, Recharts) that tells the WATTWISE story with the real results. It needs no server and no API.
+A working application: set up a building and tariff, enter a 10-minute reading, run the **real trained model in your browser**, and get the expected use, potential excess energy, estimated cost and things worth checking. Analyses are saved locally, so history, savings and checks survive a refresh. No server, no database, no AI API.
 
 ```bash
 cd website
 npm install
-npm run dev          # http://localhost:3000
-npm run build        # static export in website/out/
-npx serve out        # preview the production build
+npm run dev            # http://localhost:3000
+npm run test:golden    # browser inference vs Python, 20 golden cases
+npm run build          # static app in website/out/
+npx serve out          # preview the production build
 ```
 
-`npm run dev` and `npm run build` first run `scripts/build-data.mjs`. That script reads `results/metrics.json`, `predictions.csv`, `anomalies.csv` and `failure_analysis.csv` and writes `src/data/site-data.json`. Every number on the site comes from there. If a results file is missing, the affected section shows an "unavailable" notice instead of breaking. Re-run `python ml/train.py`, then rebuild, to refresh the site.
+**Flow:** onboarding (building type, currency, tariff) → Analyze (when → reading → recent context → run) → result (actual vs expected, potential excess, cost, anomaly percentile, energy-flow infographic, suggested checks) → save → Overview, History, Insights (savings and patterns from saved analyses only), Learn (research, real failures, in-browser model verification), Settings.
+
+**In-browser inference.** `ml/export_web.py` exports every tree of the selected Gradient Boosting model, plus its feature order and anomaly calibration, to `website/src/data/wattwise-model.json`. `src/lib/ml/gbm.ts` walks those trees exactly as scikit-learn does (float32 inputs, float64 thresholds, same summation order). The 20 golden cases in `golden.json` match Python to 0.0 Wh.
+
+**Model inputs.** The model needs the previous reading, the average of the last hour and the average of the last 6 hours. The app derives them from your saved readings when all 36 preceding intervals are available. Otherwise you paste the 36 readings or enter the three values. Missing readings are never filled in.
+
+**Demo data.** "Try with demo data" loads real held-out test readings, with their real 6-hour history, and runs them through the same browser code.
+
+**Storage.** One versioned localStorage document, `wattwise:v1`, holds the profile, tariff, preferences, onboarding state, analyses, completed checks and readings (`src/lib/storage.ts`).
+
+Research figures on the Learn page come from `results/` via `scripts/build-data.mjs`, which runs automatically before `dev` and `build`.
 
 ## Rules followed
 

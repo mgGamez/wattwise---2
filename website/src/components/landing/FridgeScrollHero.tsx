@@ -8,6 +8,7 @@
 // To swap the clip later, replace /public/media/wattwise-fridge.mp4 on disk with a
 // file of the same name — no code changes needed.
 
+import { Calistoga } from "next/font/google";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring, useTransform } from "framer-motion";
@@ -16,6 +17,7 @@ import { IconBolt } from "@/components/icons";
 import { EASE, useReduceMotion } from "@/components/motion";
 import { playLatch, playWhoosh } from "@/lib/sounds";
 
+const display = Calistoga({ subsets: ["latin"], weight: "400" });
 const VIDEO_SRC = "/media/wattwise-fridge.mp4";
 // Warm beige matched to the clip's own background, so the frame melts into the page.
 const BG = "#d8bfae";
@@ -131,12 +133,11 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
   const introCopy = (
     <>
       <p className="label-caps">WATTWISE</p>
-      <h1 className="mt-2 text-xl font-bold leading-snug text-ink sm:text-2xl">
+      <h1 className={display.className + " mt-2 text-2xl leading-tight text-ink sm:text-4xl"}>
         See what your
         <br />
         electricity is telling you.
       </h1>
-      <p className="mt-3 text-sm font-semibold text-ink-2">Scroll to open ↓</p>
     </>
   );
 
@@ -182,7 +183,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
   return (
     <section
       ref={sectionRef}
-      aria-label="See what your electricity is telling you — scroll to open the fridge"
+      aria-label="See what your electricity is telling you"
       className="relative h-[220vh] md:h-[300vh]"
       style={{ background: BG }}
     >

@@ -7,10 +7,10 @@
 // analysed live in this browser by the same code the app uses.
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring, useTransform, type MotionValue } from "framer-motion";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useMemo, useState, type ReactNode } from "react";
 import { Logo } from "@/components/AppShell";
+import { FridgeScrollHero } from "@/components/landing/FridgeScrollHero";
 import { AnimatedNumber, EASE, SPRING, useReduceMotion } from "@/components/motion";
 import { CATEGORY_ICON, IconArrowRight, IconBolt, IconCheck, IconClock, IconFlask, IconHistory, IconInsights, IconShield } from "@/components/icons";
 import { buttonClass, StatusPill } from "@/components/ui";
@@ -19,7 +19,7 @@ import { analyseBill, type Bill } from "@/lib/ml/bills";
 import demoBillsJson from "@/data/demo-bills.json";
 import { monthName } from "@/lib/explain";
 import { fmtNum, ordinal } from "@/lib/money";
-import { enableSound, playLatch, playWhoosh } from "@/lib/sounds";
+import { enableSound, playLatch } from "@/lib/sounds";
 
 const EXAMPLE_TARIFF = 8.5; // ₹/kWh, clearly labelled as an example wherever shown
 
@@ -63,7 +63,7 @@ export default function Landing() {
         </div>
       </header>
 
-      <FridgeScene reduce={reduce} sound={sound} />
+      <FridgeScrollHero sound={sound} />
       <WasItNormal reduce={reduce} />
       <PipelineStory reduce={reduce} />
       <MoneyStory reduce={reduce} />
@@ -88,287 +88,38 @@ export default function Landing() {
   );
 }
 
-/* ================================================================== scene 1: the layered 3D fridge */
-// Built from layers (body, hinged door, interior, shelves, light, shadows) — not a
-// screenshot. The door rotates around its left hinge with a real CSS 3D transform,
-// so scrolling opens it and scrolling back up closes it again.
-
-type MVN = MotionValue<number> | number;
-
-function FridgeScene({ reduce, sound }: { reduce: boolean; sound: boolean }) {
-  const router = useRouter();
-  const ref = useRef<HTMLElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
-  const p = useSpring(scrollYProgress, { stiffness: 150, damping: 30, restDelta: 0.0005 });
-
-  // camera: subtle push-in, then closer as the light builds
-  const cam = useTransform(p, [0, 0.15, 0.3, 0.7, 0.92], [0.92, 0.94, 1, 1.06, 1.17]);
-  const camY = useTransform(p, [0, 1], ["1.5%", "-3%"]);
-  const bgY = useTransform(p, [0, 1], [0, -60]);
-  // the door: a tiny latch nudge, then a progressive swing to ~105°
-  const door = useTransform(p, [0.24, 0.28, 0.31, 0.5, 0.72], [0, -2.5, -1, -56, -105]);
-  // interior light + warm spill onto the scene
-  const light = useTransform(p, [0.32, 0.7, 0.9], [0, 0.5, 1]);
-  const spill = useTransform(p, [0.42, 0.9], [0, 0.5]);
-  // shadows deepen and spread as the door swings out
-  const shadowO = useTransform(p, [0, 0.7], [0.4, 0.55]);
-  const shadowX = useTransform(p, [0.3, 0.72], [1, 1.22]);
-  const doorShadow = useTransform(p, [0.32, 0.72], [0, 0.28]);
-  const doorShade = useTransform(door, [-105, 0], [0.32, 0]);
-  // copy + button sequencing
-  const intro = useTransform(p, [0, 0.14], [1, 0]);
-  const openCopy = useTransform(p, [0.86, 0.95], [0, 1]);
-  const btnO = useTransform(p, [0.88, 0.96], [0, 1]);
-  const btnS = useTransform(p, [0.88, 0.98], [0.85, 1]);
-
-  const [open, setOpen] = useState(false);
-  const last = useRef(0);
-  useMotionValueEvent(scrollYProgress, "change", (v) => {
-    setOpen(v > 0.86);
-    if (sound && last.current < 0.28 && v >= 0.28) playLatch();
-    if (sound && last.current < 0.45 && v >= 0.45) playWhoosh();
-    last.current = v;
-  });
-  const showButton = reduce || open;
-
-  // click-to-enter: the interior light expands over the page, then the real Analyze opens
-  const [leaving, setLeaving] = useState(false);
-  const enter = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (reduce || leaving) {
-      router.push("/analyze/");
-      return;
-    }
-    setLeaving(true);
-    setTimeout(() => router.push("/analyze/"), 480);
-  };
-
-  const analyzeButton = (
-    <motion.div style={reduce ? undefined : { opacity: btnO, scale: btnS }}>
-      <Link
-        href="/analyze/"
-        onClick={enter}
-        tabIndex={showButton ? 0 : -1}
-        aria-hidden={!showButton}
-        className={
-          "flex h-12 items-center gap-2 whitespace-nowrap rounded-full bg-ink px-6 text-[0.95rem] font-semibold text-white shadow-[0_18px_40px_-12px_rgb(29_32_36/0.65)] transition-transform hover:scale-[1.05] active:scale-[0.97] sm:h-[3.4rem] sm:px-7 sm:text-[1.05rem] " +
-          (showButton ? "" : "pointer-events-none")
-        }
-      >
-        <IconBolt size={20} /> Analyze Now
-      </Link>
-    </motion.div>
-  );
-
-  if (reduce)
-    return (
-      <section aria-label="Open your energy story" className="flex min-h-dvh flex-col items-center justify-center gap-8 px-4 pt-20" style={{ background: "#dbc3b1" }}>
-        <h1 className="text-center text-3xl font-bold text-ink">Open your energy story.</h1>
-        <Fridge door={-105} doorShade={0.32} light={1} spill={0.4} shadowO={0.5} shadowX={1.2} doorShadow={0.25} button={analyzeButton} />
-        <p className="max-w-sm text-center font-semibold text-ink-2">See what your electricity is really telling you.</p>
-      </section>
-    );
-
-  return (
-    <section ref={ref} aria-label="Open your energy story — scroll to open the fridge" className="relative h-[320vh]" style={{ background: "#dbc3b1" }}>
-      <div className="sticky top-0 flex h-dvh flex-col items-center justify-center overflow-hidden px-4">
-        <motion.div
-          aria-hidden
-          className="pointer-events-none absolute inset-[-10%]"
-          style={{ y: bgY, background: "radial-gradient(60% 55% at 50% 40%, rgb(255 243 226 / 0.6), transparent 70%)" }}
-        />
-        {/* camera */}
-        <motion.div style={{ scale: cam, y: camY }} className="will-change-transform">
-          <Fridge door={door} doorShade={doorShade} light={light} spill={spill} shadowO={shadowO} shadowX={shadowX} doorShadow={doorShadow} button={analyzeButton} />
-        </motion.div>
-
-        <motion.p style={{ opacity: intro }} className="pointer-events-none absolute bottom-7 flex flex-col items-center gap-1.5 text-sm font-semibold text-ink-2">
-          Scroll to explore
-          <motion.span animate={{ y: [0, 6, 0] }} transition={{ repeat: Infinity, duration: 1.4 }} aria-hidden>
-            ↓
-          </motion.span>
-        </motion.p>
-        <motion.p style={{ opacity: openCopy }} aria-hidden className="pointer-events-none absolute bottom-7 max-w-sm px-6 text-center text-base font-bold text-ink sm:text-lg">
-          See what your electricity is really telling you.
-        </motion.p>
-      </div>
-
-      <AnimatePresence>
-        {leaving && (
-          <motion.div
-            className="fixed inset-0 z-50 bg-canvas"
-            initial={{ clipPath: "circle(0% at 50% 50%)" }}
-            animate={{ clipPath: "circle(150% at 50% 50%)" }}
-            transition={{ duration: 0.5, ease: EASE }}
-          />
-        )}
-      </AnimatePresence>
-    </section>
-  );
-}
-
-/**
- * The fridge itself. The root sets font-size to 1% of its own width, so every
- * "em" below is a percentage of fridge width — the whole object scales as one.
- * The door is a real 3D panel (front face, inner face, edge) rotating around
- * its left hinge inside a perspective container.
- */
-function Fridge({ door, doorShade, light, spill, shadowO, shadowX, doorShadow, button }: { door: MVN; doorShade: MVN; light: MVN; spill: MVN; shadowO: MVN; shadowX: MVN; doorShadow: MVN; button: ReactNode }) {
-  const shelfTops = ["30%", "52%", "74%"];
-  return (
-    <div style={{ perspective: "1100px" }}>
-      <div className="relative" style={{ width: "min(76vw, 380px)", fontSize: "calc(min(76vw, 380px) / 100)", aspectRatio: "100 / 138" }}>
-        {/* contact shadow */}
-        <motion.div
-          aria-hidden
-          className="absolute bottom-[-2em] left-1/2 h-[7em] w-[88%] -translate-x-1/2 rounded-[50%] bg-[#7d6350]"
-          style={{ opacity: shadowO, scaleX: shadowX, filter: "blur(2em)" }}
-        />
-        {/* shadow the open door casts to the left */}
-        <motion.div aria-hidden className="absolute bottom-[-1em] left-[-38%] h-[9em] w-[62%] rounded-[50%] bg-[#6e564a]" style={{ opacity: doorShadow, filter: "blur(2.6em)" }} />
-
-        {/* feet */}
-        <div aria-hidden className="absolute bottom-0 left-[16%] h-[4.5em] w-[8em] rounded-b-[2em] bg-gradient-to-b from-[#cdc5b6] to-[#968c7b]" />
-        <div aria-hidden className="absolute bottom-0 right-[16%] h-[4.5em] w-[8em] rounded-b-[2em] bg-gradient-to-b from-[#cdc5b6] to-[#968c7b]" />
-
-        {/* body */}
-        <div
-          aria-hidden
-          className="absolute inset-x-0 bottom-[3.5em] top-0 rounded-[11em] bg-gradient-to-br from-[#fdfaf4] via-[#f4efe5] to-[#e2dac9]"
-          style={{ boxShadow: "0 3em 7em -2em rgb(90 70 50 / 0.5), inset -2em 0 4em rgb(125 100 75 / 0.14), inset 2em 2em 3em rgb(255 255 255 / 0.85), inset 0 -2em 4em rgb(125 100 75 / 0.16)" }}
-        />
-
-        {/* interior cavity (revealed by the door) */}
-        <div className="absolute bottom-[9%] left-[7%] right-[7%] top-[5%] overflow-hidden rounded-[6em] bg-[#ece4d4]" style={{ boxShadow: "inset 0 0 7em rgb(95 75 55 / 0.45), inset 0 -2.5em 5em rgb(110 88 66 / 0.25)" }}>
-          {/* back wall */}
-          <div aria-hidden className="absolute inset-[6%] rounded-[5em]" style={{ background: "radial-gradient(85% 75% at 50% 38%, #fbf4e4, #e6ddc9 78%)" }} />
-          {/* side walls */}
-          <div aria-hidden className="absolute bottom-0 left-0 top-0 w-[10%]" style={{ background: "linear-gradient(90deg, rgb(110 88 66 / 0.3), transparent)" }} />
-          <div aria-hidden className="absolute bottom-0 right-0 top-0 w-[10%]" style={{ background: "linear-gradient(-90deg, rgb(110 88 66 / 0.3), transparent)" }} />
-          {/* ceiling lamp */}
-          <div aria-hidden className="absolute left-1/2 top-[5.5%] h-[2.6em] w-[44%] -translate-x-1/2 rounded-full bg-[#fff3d2]" style={{ boxShadow: "0 0.5em 2em 0.5em rgb(255 220 150 / 0.8)" }} />
-          <motion.div aria-hidden className="absolute left-1/2 top-[3%] h-[26%] w-[70%] -translate-x-1/2 rounded-[50%] bg-[#ffe9bd]" style={{ opacity: light, filter: "blur(3em)" }} />
-          {/* shelves: top surface + front edge */}
-          {shelfTops.map((top) => (
-            <div key={top} aria-hidden className="absolute left-[10%] right-[10%]" style={{ top }}>
-              <div className="h-[3em] rounded-[1em]" style={{ background: "linear-gradient(180deg, #fffdf4, #eee5d2)" }} />
-              <div className="h-[1.4em] rounded-b-[1em]" style={{ background: "linear-gradient(180deg, #f4ecda, #d9cfb9)", boxShadow: "0 1.2em 1.6em -0.6em rgb(110 88 66 / 0.45)" }} />
-            </div>
-          ))}
-          {/* warm light wash over everything inside */}
-          <motion.div aria-hidden className="pointer-events-none absolute inset-0" style={{ opacity: light, background: "radial-gradient(70% 60% at 50% 26%, rgb(255 216 150 / 0.55), rgb(255 232 190 / 0.18) 60%, transparent 85%)" }} />
-          {/* the real button, inside the fridge */}
-          <div className="absolute inset-0 grid place-items-center">{button}</div>
-        </div>
-
-        {/* warm light spilling out of the open fridge */}
-        <motion.div aria-hidden className="pointer-events-none absolute bottom-[8%] left-[-24%] top-[6%] w-[70%] rounded-[50%] bg-[#ffd9a2]" style={{ opacity: spill, filter: "blur(4em)" }} />
-
-        {/* the door: front face + inner face + swinging edge, hinged on the left */}
-        <motion.div
-          data-testid="fridge-door"
-          aria-hidden
-          className="absolute bottom-[9%] left-[7%] right-[7%] top-[5%] will-change-transform"
-          style={{ transformOrigin: "left center", rotateY: door, transformStyle: "preserve-3d", z: 2 }}
-        >
-          {/* front face */}
-          <div
-            className="absolute inset-0 rounded-[6em] bg-gradient-to-br from-white via-[#f7f2e8] to-[#e7dfce]"
-            style={{ backfaceVisibility: "hidden", boxShadow: "inset 1.5em 1.5em 2.5em rgb(255 255 255 / 0.9), inset -1.5em -1.5em 3em rgb(125 100 75 / 0.12), 0 0.5em 2em rgb(90 70 50 / 0.18)" }}
-          >
-            <p className="px-[12%] pt-[22%] text-center font-bold leading-[1.18] text-ink" style={{ fontSize: "8em" }}>
-              Open your energy story.
-            </p>
-            {/* handle */}
-            <div className="absolute right-[8%] top-1/2 h-[19em] w-[2.8em] -translate-y-1/2 rounded-full bg-gradient-to-b from-[#eceef0] via-[#b4b8bf] to-[#878c93]" style={{ boxShadow: "0.4em 0.8em 1.4em rgb(80 70 60 / 0.45), inset 0.4em 0 0.6em rgb(255 255 255 / 0.8)" }} />
-            <div className="absolute right-[9.2%] top-[33.5%] h-[1.6em] w-[5em] rounded-full bg-[#9aa0a7]" />
-            <div className="absolute right-[9.2%] bottom-[33.5%] h-[1.6em] w-[5em] rounded-full bg-[#9aa0a7]" />
-            <motion.div aria-hidden className="absolute inset-0 rounded-[6em]" style={{ opacity: doorShade, background: "linear-gradient(105deg, rgb(90 72 55 / 0.12), rgb(90 72 55 / 0.55))" }} />
-          </div>
-          {/* door thickness (the edge you see while it swings) */}
-          <div className="absolute bottom-[1%] right-0 top-[1%] w-[3.4em] rounded-[1em]" style={{ transformOrigin: "right center", transform: "rotateY(-90deg)", background: "linear-gradient(90deg, #efe8d9, #cbc2ad)" }} />
-          {/* inner face with door racks */}
-          <div className="absolute inset-0 rounded-[6em] bg-[#f3eddf]" style={{ transform: "rotateY(180deg)", backfaceVisibility: "hidden", boxShadow: "inset 0 0 4em rgb(110 88 66 / 0.25)" }}>
-            <div className="absolute left-[10%] right-[10%] top-[30%] h-[7em] rounded-[1.5em] bg-gradient-to-b from-[#faf5e9] to-[#ded5c0]" />
-            <div className="absolute left-[10%] right-[10%] top-[62%] h-[7em] rounded-[1.5em] bg-gradient-to-b from-[#faf5e9] to-[#ded5c0]" />
-          </div>
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-/* ================================================================== scene 2: was it normal? */
+/* ================================================================== scene 2: used vs expected (compact) */
 function WasItNormal({ reduce }: { reduce: boolean }) {
   const reading = site.context?.lowButUnusual ?? null; // real held-out reading: 320 Wh actual vs 77.66 expected
-  const ref = useRef<HTMLElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
-  const p = useSpring(scrollYProgress, { stiffness: 140, damping: 30 });
-  const q1o = useTransform(p, [0, 0.2, 0.32], [1, 1, 0]);
-  const q1y = useTransform(p, [0, 0.32], [0, -60]);
-  const q2o = useTransform(p, [0.26, 0.38], [0, 1]);
-  const q2s = useTransform(p, [0.26, 0.42], [0.92, 1]);
-  const q2y = useTransform(p, [0.5, 0.64], [0, -40]);
-  const [showNums, setShowNums] = useState(false);
-  useMotionValueEvent(scrollYProgress, "change", (v) => setShowNums(v > 0.5));
   if (!reading) return null;
-
-  const numbers = (
-    <div className="grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
-      {[
-        { label: "ACTUAL", v: reading.actual, cls: "text-ink", sub: "what the meter recorded" },
-        { label: "EXPECTED", v: reading.expected, cls: "text-blue", sub: "what the AI predicted" },
-        { label: "POTENTIAL EXCESS", v: reading.residual, cls: "text-amber", sub: "worth a closer look", plus: true },
-      ].map((s, i) => (
-        <motion.div
-          key={s.label}
-          initial={reduce ? false : { opacity: 0, y: 24, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ ...SPRING, delay: i * 0.1 }}
-          className="surface px-6 py-5 text-center"
-        >
-          <p className="label-caps">{s.label}</p>
-          <p className={`num mt-1 text-4xl font-bold sm:text-5xl ${s.cls}`}>
-            {s.plus ? "+" : ""}
-            <AnimatedNumber value={s.v} format={(v) => fmtNum(v)} delay={i * 0.1} />
-            <span className="ml-1 text-lg text-ink-3">Wh</span>
-          </p>
-          <p className="mt-1 text-xs text-ink-3">{s.sub}</p>
-        </motion.div>
-      ))}
-    </div>
-  );
-
-  if (reduce)
-    return (
-      <section className="mx-auto flex max-w-5xl flex-col items-center gap-8 px-5 py-24 text-center">
-        <h2 className="text-4xl font-bold text-ink">
-          You know how much electricity you used. <span className="text-sage-strong">But was it normal?</span>
-        </h2>
-        {numbers}
-        <p className="text-xs text-ink-3">One real reading from the held-out research data — never seen by the model in training.</p>
-      </section>
-    );
-
+  const stats = [
+    { label: "USED", v: reading.actual, cls: "text-ink", sub: "what the meter recorded", plus: false },
+    { label: "EXPECTED", v: reading.expected, cls: "text-blue", sub: "what the AI predicted", plus: false },
+    { label: "POTENTIAL EXCESS", v: reading.residual, cls: "text-amber", sub: "worth a closer look", plus: true },
+  ];
   return (
-    <section ref={ref} aria-label="You know how much electricity you used. But was it normal?" className="relative h-[260vh] bg-canvas">
-      <div className="sticky top-0 flex h-dvh flex-col items-center justify-center gap-8 overflow-hidden px-5 text-center">
-        <motion.h2 style={{ opacity: q1o, y: q1y }} className="absolute px-6 text-[clamp(2rem,6vw,4.5rem)] font-bold leading-tight text-ink">
-          You know how much
-          <br />
-          electricity you used.
-        </motion.h2>
-        <motion.h2 style={{ opacity: q2o, scale: q2s, y: q2y }} className="px-6 text-[clamp(2.2rem,7vw,5.5rem)] font-bold leading-tight text-sage-strong">
-          But was it normal?
-        </motion.h2>
-        {showNums && (
-          <>
-            {numbers}
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} className="text-xs text-ink-3">
-              One real reading from the held-out research data — never seen by the model in training.
-            </motion.p>
-          </>
-        )}
+    <section className="mx-auto max-w-4xl px-5 py-20 sm:py-24" aria-labelledby="normal-title">
+      <Eyebrow>The question that matters</Eyebrow>
+      <h2 id="normal-title" className="mt-3 max-w-2xl text-[clamp(1.6rem,3.4vw,2.4rem)] font-bold leading-tight text-ink">
+        You know how much electricity you used. <span className="text-sage-strong">But was it normal?</span>
+      </h2>
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        {stats.map((s, i) => (
+          <motion.div key={s.label} {...inView(reduce, i * 0.08)} className="surface px-6 py-5 text-center">
+            <p className="label-caps">{s.label}</p>
+            <p className={"num mt-1 text-4xl font-bold sm:text-5xl " + s.cls}>
+              {s.plus ? "+" : ""}
+              <AnimatedNumber value={s.v} format={(v) => fmtNum(v)} delay={i * 0.1} />
+              <span className="ml-1 text-lg text-ink-3">Wh</span>
+            </p>
+            <p className="mt-1 text-xs text-ink-3">{s.sub}</p>
+          </motion.div>
+        ))}
       </div>
+      <p className="mt-4 text-xs text-ink-3">
+        One real 10-minute reading from the held-out research data — never seen by the model in training. The same idea powers your bill
+        analysis.
+      </p>
     </section>
   );
 }

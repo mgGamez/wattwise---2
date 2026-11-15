@@ -23,6 +23,8 @@ const VIDEO_SRC = "/media/wattwise-fridge.mp4";
 const BG = "#d8bfae";
 // Where the open interior sits in the 16:9 frame (fractions of the video box).
 const BUTTON_POS = { left: "44%", top: "52%" };
+// Analyze Now shows once the scrubbed clip reaches this second.
+const BUTTON_AT_S = 1.7;
 
 /**
  * Fetch the clip once and scrub a blob URL: blobs are always fully seekable
@@ -70,10 +72,8 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
   const introO = useTransform(p, [0, 0.2, 0.35], [1, 1, 0]);
   const introY = useTransform(p, [0, 0.35], [0, -24]);
   const captionO = useTransform(p, [0.86, 0.96], [0, 1]);
-  const btnO = useTransform(p, [0.85, 0.95], [0, 1]);
-  const btnScale = useTransform(p, [0.85, 0.98], [0.92, 1]);
-  const btnY = useTransform(p, [0.85, 0.98], [15, 0]);
 
+  const [open, setOpen] = useState(false);
   // Seek loop: rAF reads the motion value and nudges video.currentTime — no React
   // state per scroll frame, and we never fight an in-flight seek.
   useEffect(() => {
@@ -84,6 +84,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
       if (v && v.readyState >= 1 && Number.isFinite(v.duration) && !v.seeking) {
         const t = timeP.get() * Math.max(v.duration - 0.05, 0);
         if (Math.abs(v.currentTime - t) > 0.02) v.currentTime = t;
+        setOpen(t >= BUTTON_AT_S);
       }
       raf = requestAnimationFrame(tick);
     };
@@ -91,10 +92,8 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
     return () => cancelAnimationFrame(raf);
   }, [reduce, timeP]);
 
-  const [open, setOpen] = useState(false);
   const last = useRef(0);
   useMotionValueEvent(scrollYProgress, "change", (v) => {
-    setOpen(v > 0.85);
     if (sound && last.current < 0.28 && v >= 0.28) playLatch();
     if (sound && last.current < 0.45 && v >= 0.45) playWhoosh();
     last.current = v;
@@ -114,7 +113,11 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
   };
 
   const analyzeButton = (
-    <motion.div style={reduce ? undefined : { opacity: btnO, scale: btnScale, y: btnY }}>
+    <motion.div
+      initial={false}
+      animate={showButton ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.92, y: 15 }}
+      transition={{ duration: showButton ? 0.35 : 0.2, ease: EASE }}
+    >
       <Link
         href="/analyze/"
         onClick={enter}
@@ -132,7 +135,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
 
   const introCopy = (
     <>
-      <p className="label-caps">WATTWISE</p>
+      <p className="text-sm font-extrabold tracking-[0.28em] text-ink sm:text-base">WATTWISE</p>
       <h1 className={display.className + " mt-2 text-2xl leading-tight text-ink sm:text-4xl"}>
         See what your
         <br />

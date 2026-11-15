@@ -24,7 +24,7 @@ const BG = "#d8bfae";
 // Where the open interior sits in the 16:9 frame (fractions of the video box).
 const BUTTON_POS = { left: "44%", top: "52%" };
 // Analyze Now shows once the scrubbed clip reaches this second.
-const BUTTON_AT_S = 1.7;
+const BUTTON_AT_S = 1.8;
 
 /**
  * Fetch the clip once and scrub a blob URL: blobs are always fully seekable
@@ -77,7 +77,6 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
   // Seek loop: rAF reads the motion value and nudges video.currentTime — no React
   // state per scroll frame, and we never fight an in-flight seek.
   useEffect(() => {
-    if (reduce) return;
     let raf = 0;
     const tick = () => {
       const v = videoRef.current;
@@ -90,7 +89,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [reduce, timeP]);
+  }, [timeP]);
 
   const last = useRef(0);
   useMotionValueEvent(scrollYProgress, "change", (v) => {
@@ -98,7 +97,8 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
     if (sound && last.current < 0.45 && v >= 0.45) playWhoosh();
     last.current = v;
   });
-  const showButton = reduce || open;
+  // Scrubbing is user-driven, so it stays on even with reduced motion (only the camera push is dropped).
+  const showButton = open;
 
   // click-to-enter: warm light expands from the interior, then the real Analyze opens
   const [leaving, setLeaving] = useState(false);
@@ -144,45 +144,6 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
     </>
   );
 
-  // ---------- reduced motion: closed state crossfades once to the open state
-  if (reduce)
-    return (
-      <section aria-label="See what your electricity is telling you" className="relative flex min-h-svh flex-col items-center justify-center gap-6 px-4 pb-10 pt-20" style={{ background: BG }}>
-        <div className="text-center">{introCopy}</div>
-        <div className="relative w-full max-w-[1100px]" style={{ aspectRatio: "16 / 9", maxHeight: "72svh" }}>
-          <video
-            src={videoUrl}
-            muted
-            playsInline
-            preload="auto"
-            aria-hidden
-            tabIndex={-1}
-            className="absolute inset-0 size-full object-contain"
-            onLoadedMetadata={(e) => {
-              const v = e.currentTarget;
-              v.currentTime = Math.max(v.duration - 0.05, 0);
-            }}
-          />
-          <motion.video
-            src={videoUrl}
-            muted
-            playsInline
-            preload="auto"
-            aria-hidden
-            tabIndex={-1}
-            className="absolute inset-0 size-full object-contain"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 0 }}
-            transition={{ delay: 0.8, duration: 0.9 }}
-          />
-          <div className="absolute grid -translate-x-1/2 -translate-y-1/2 place-items-center" style={BUTTON_POS}>
-            {analyzeButton}
-          </div>
-        </div>
-        <p className="max-w-sm text-center text-sm font-semibold text-ink-2">See what your electricity is really telling you.</p>
-      </section>
-    );
-
   return (
     <section
       ref={sectionRef}
@@ -195,7 +156,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
         <div className="absolute inset-0 grid place-items-center">
           <motion.div
             className="relative will-change-transform"
-            style={{ scale: camScale, aspectRatio: "16 / 9", width: "min(100%, calc(100svh * 16 / 9))" }}
+            style={{ scale: reduce ? 1 : camScale, aspectRatio: "16 / 9", width: "min(100%, calc(100svh * 16 / 9))" }}
           >
             <video
               ref={videoRef}

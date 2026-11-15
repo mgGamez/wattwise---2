@@ -19,8 +19,10 @@ import { playLatch, playWhoosh } from "@/lib/sounds";
 const VIDEO_SRC = "/media/wattwise-fridge.mp4";
 // Warm beige matched to the clip's own background, so the frame melts into the page.
 const BG = "#d8bfae";
+// The clip's fridge sits left of frame centre; nudge the video right so the heading is centred on it.
+const FRIDGE_SHIFT = "2.7%";
 // Where the open interior sits in the 16:9 frame (fractions of the video box).
-const BUTTON_POS = { left: "44%", top: "52%" };
+const BUTTON_POS = { left: "46.7%", top: "52%" }; // 44% inside the clip + FRIDGE_SHIFT
 // Analyze Now shows once the scrubbed clip reaches this second.
 const BUTTON_AT_S = 1.8;
 
@@ -167,9 +169,10 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
               aria-hidden
               tabIndex={-1}
               className="absolute inset-0 size-full object-contain"
+              style={{ transform: `translateX(${FRIDGE_SHIFT})` }}
             />
             {/* soft vignette so the frame edges blend into the page */}
-            <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(ellipse 95% 92% at 50% 50%, transparent 55%, ${BG} 96%)` }} />
+            <div aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: `translateX(${FRIDGE_SHIFT})`, background: `radial-gradient(ellipse 95% 92% at 50% 50%, transparent 55%, ${BG} 96%)` }} />
 
             {/* intro copy, near the closed door */}
             <motion.div style={{ opacity: introO, y: introY }} className="pointer-events-none absolute bottom-full left-1/2 mb-5 -translate-x-1/2 text-center sm:bottom-auto sm:mb-0 sm:top-[7%]">

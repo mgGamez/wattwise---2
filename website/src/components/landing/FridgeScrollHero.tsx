@@ -175,7 +175,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
             <div aria-hidden className="pointer-events-none absolute inset-0" style={{ transform: `translateX(${FRIDGE_SHIFT})`, background: `radial-gradient(ellipse 95% 92% at 50% 50%, transparent 55%, ${BG} 96%)` }} />
 
             {/* intro copy, near the closed door */}
-            <motion.div style={{ opacity: introO, y: introY }} className="pointer-events-none absolute bottom-full left-1/2 mb-5 -translate-x-1/2 text-center sm:bottom-auto sm:mb-0 sm:top-[7%]">
+            <motion.div style={{ opacity: introO, y: introY }} className="pointer-events-none absolute bottom-full left-1/2 mb-5 -translate-x-1/2 text-center sm:bottom-auto sm:mb-0 sm:top-[12%]">
               {introCopy}
             </motion.div>
 

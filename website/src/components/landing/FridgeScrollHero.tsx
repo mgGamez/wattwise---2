@@ -8,7 +8,6 @@
 // To swap the clip later, replace /public/media/wattwise-fridge.mp4 on disk with a
 // file of the same name — no code changes needed.
 
-import { Calistoga } from "next/font/google";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring, useTransform } from "framer-motion";
@@ -17,7 +16,6 @@ import { IconBolt } from "@/components/icons";
 import { EASE, useReduceMotion } from "@/components/motion";
 import { playLatch, playWhoosh } from "@/lib/sounds";
 
-const display = Calistoga({ subsets: ["latin"], weight: "400" });
 const VIDEO_SRC = "/media/wattwise-fridge.mp4";
 // Warm beige matched to the clip's own background, so the frame melts into the page.
 const BG = "#d8bfae";
@@ -124,7 +122,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
         tabIndex={showButton ? 0 : -1}
         aria-hidden={!showButton}
         className={
-          "flex h-11 items-center gap-2 whitespace-nowrap rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-[0_16px_36px_-12px_rgb(29_32_36/0.6)] transition-transform hover:scale-[1.05] active:scale-[0.97] sm:h-[3.3rem] sm:px-7 sm:text-[1.05rem] " +
+          "shimmer flex h-11 items-center gap-2 whitespace-nowrap rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-[0_16px_36px_-12px_rgb(29_32_36/0.6)] transition-transform hover:scale-[1.05] active:scale-[0.97] sm:h-[3.3rem] sm:px-7 sm:text-[1.05rem] " +
           (showButton ? "" : "pointer-events-none")
         }
       >
@@ -136,7 +134,7 @@ export function FridgeScrollHero({ sound }: { sound: boolean }) {
   const introCopy = (
     <>
       <p className="text-sm font-extrabold tracking-[0.28em] text-ink sm:text-base">WATTWISE</p>
-      <h1 className={display.className + " mt-2 text-2xl leading-tight text-ink sm:text-4xl"}>
+      <h1 className="mt-2 font-display text-2xl leading-tight text-ink sm:text-4xl">
         See what your
         <br />
         electricity is telling you.

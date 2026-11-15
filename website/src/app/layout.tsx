@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Calistoga, Plus_Jakarta_Sans } from "next/font/google";
 import { AppShell } from "@/components/AppShell";
 import { MotionProvider } from "@/components/motion";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-jakarta", display: "swap" });
+const calistoga = Calistoga({ subsets: ["latin"], weight: "400", variable: "--font-calistoga", display: "swap" });
 
 export const metadata: Metadata = {
   title: "WATTWISE",
@@ -20,7 +21,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={jakarta.variable}>
+    <html lang="en" className={`${jakarta.variable} ${calistoga.variable}`}>
       <body>
         <MotionProvider>
           <AppShell>{children}</AppShell>

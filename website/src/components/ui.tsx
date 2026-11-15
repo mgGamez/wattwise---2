@@ -8,7 +8,7 @@ import { EASE } from "./motion";
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "quiet";
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-ink text-white hover:bg-ink/90 shadow-[0_6px_20px_-8px_rgb(29_32_36/0.5)]",
+  primary: "shimmer bg-ink text-white hover:bg-ink/90 shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_6px_20px_-8px_rgb(29_32_36/0.5)]",
   secondary: "bg-surface text-ink border border-line-strong hover:border-ink-3 hover:bg-white",
   ghost: "text-ink-2 hover:text-ink hover:bg-sunken",
   danger: "bg-danger text-white hover:bg-danger/90",
@@ -55,7 +55,7 @@ export function PageHeader({ eyebrow, title, sub, aside }: { eyebrow?: string; t
     <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div className="max-w-2xl">
         {eyebrow && <p className="label-caps">{eyebrow}</p>}
-        <h1 className="mt-2 text-[2rem] font-bold leading-[1.1] text-ink sm:text-[2.6rem]">{title}</h1>
+        <h1 className="mt-2 font-display text-[2rem] leading-[1.1] text-ink sm:text-[2.6rem]">{title}</h1>
         {sub && <p className="mt-3 text-[1.05rem] leading-relaxed text-ink-2">{sub}</p>}
       </div>
       {aside}

@@ -23,7 +23,7 @@ export default function Overview() {
   const header = (
     <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-[2.2rem] font-bold leading-[1.1] text-ink sm:text-[2.8rem]">{hello}</h1>
+        <h1 className="font-display text-[2.2rem] leading-[1.1] text-ink sm:text-[2.8rem]">{hello}</h1>
         <p className="mt-1 text-[1.35rem] font-semibold text-ink-2 sm:text-2xl">Here’s what WATTWISE sees.</p>
       </div>
       <ButtonLink href="/analyze/" size="lg">

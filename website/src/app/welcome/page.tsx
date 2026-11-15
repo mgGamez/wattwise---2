@@ -115,7 +115,7 @@ export default function Welcome() {
             {step === 1 && (
               <div>
                 <p className="label-caps">Step 1 of 3</p>
-                <h1 className="mt-2 text-[2rem] font-bold leading-tight text-ink">What are we monitoring?</h1>
+                <h1 className="mt-2 font-display text-[2rem] leading-tight text-ink">What are we monitoring?</h1>
                 <p className="mt-2 text-ink-2">This helps WATTWISE tailor what it suggests you check.</p>
                 <div role="radiogroup" aria-label="Building type" className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {BUILDINGS.map(({ value, label, Icon }, i) => {
@@ -170,7 +170,7 @@ export default function Welcome() {
                 }}
               >
                 <p className="label-caps">Step 2 of 3</p>
-                <h1 className="mt-2 text-[2rem] font-bold leading-tight text-ink">Electricity price</h1>
+                <h1 className="mt-2 font-display text-[2rem] leading-tight text-ink">Electricity price</h1>
                 <p className="mt-2 text-ink-2">Used to turn unusual energy into an estimated cost. You’ll find it on your bill as the price per kWh.</p>
                 <div className="mt-8 space-y-5">
                   <label className="block">
@@ -222,7 +222,7 @@ export default function Welcome() {
             {step === 3 && building && tariffValid && (
               <div>
                 <p className="label-caps">Step 3 of 3</p>
-                <h1 className="mt-2 text-[2.4rem] font-bold leading-tight text-ink">Ready.</h1>
+                <h1 className="mt-2 font-display text-[2.4rem] leading-tight text-ink">Ready.</h1>
                 <div className="surface mt-8 divide-y divide-line">
                   <div className="flex items-center justify-between px-5 py-4">
                     <span className="text-ink-2">Monitoring</span>
